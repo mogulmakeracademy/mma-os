@@ -1,4 +1,9 @@
-"""n8n REST API client — read execution history + workflow metadata."""
+"""n8n REST API client — read execution history + workflow metadata.
+
+Also exposes the MMA Supabase Bridge (call_bridge): a single webhook in n8n that
+proxies all Supabase reads + writes through n8n's proven native Supabase node.
+That lets LangGraph agents talk to Supabase WITHOUT carrying service_role keys.
+"""
 from __future__ import annotations
 
 import os
@@ -6,6 +11,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
+
+
+# Webhook path of the "MMA Supabase Bridge" workflow (n8n hFLqrcHzgNLWjPPO).
+# Verbs: read_automation_health, log_activity.
+BRIDGE_PATH = "/webhook/mma-supabase-bridge"
 
 
 def _client() -> httpx.Client:
@@ -16,6 +26,30 @@ def _client() -> httpx.Client:
         headers={"X-N8N-API-KEY": api_key, "Accept": "application/json"},
         timeout=httpx.Timeout(30.0),
     )
+
+
+def _bridge_url() -> str:
+    base_url = os.environ["N8N_BASE_URL"].rstrip("/")
+    return f"{base_url}{BRIDGE_PATH}"
+
+
+def call_bridge(verb: str, payload: dict[str, Any] | None = None) -> Any:
+    """POST to the MMA Supabase Bridge webhook. Returns parsed JSON response.
+
+    Args:
+        verb: One of 'read_automation_health', 'log_activity'.
+        payload: For log_activity, must include type + source + data.
+    """
+    body: dict[str, Any] = {"verb": verb}
+    if payload is not None:
+        body["payload"] = payload
+    with httpx.Client(timeout=httpx.Timeout(30.0)) as c:
+        res = c.post(_bridge_url(), json=body)
+        res.raise_for_status()
+        try:
+            return res.json()
+        except Exception:
+            return None
 
 
 def list_workflows(active_only: bool = True) -> list[dict[str, Any]]:

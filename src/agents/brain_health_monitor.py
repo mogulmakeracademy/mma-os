@@ -4,8 +4,8 @@ Reads n8n execution history + Supabase activity log, reasons about workflow
 health using Claude, and sends a Telegram digest with anomalies + actions.
 
 Trigger: Cron via LangGraph Platform (recommended 6 AM ET / 10 UTC daily)
-Reads:   automations + activities (Supabase) + n8n /executions API
-Writes:  activities (records this run) + Telegram (digest)
+Reads:   automations + activities (Supabase via n8n bridge) + n8n /executions
+Writes:  activities (records this run via bridge) + Telegram (digest)
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
-from src.lib import n8n_client, supabase_client, telegram_client
+from src.lib import n8n_client, telegram_client
 
 
 # ─── Agent state ──────────────────────────────────────────────────────
@@ -44,53 +44,50 @@ def fetch_n8n_health(state: BrainHealthState) -> BrainHealthState:
 
 
 def fetch_automation_registry(state: BrainHealthState) -> BrainHealthState:
-    """Pull the brain's known automations + their declared health."""
-    registry = supabase_client.get_automation_health()
+    """Pull the brain's known automations + their declared health.
+
+    Uses the MMA Supabase Bridge in n8n (no direct Supabase auth needed).
+    """
+    try:
+        registry = n8n_client.call_bridge("read_automation_health")
+        if not isinstance(registry, list):
+            registry = []
+    except Exception as exc:  # noqa: BLE001
+        print(f"[brain_health_monitor] bridge read_automation_health failed: {exc}")
+        registry = []
     return {"automation_registry": registry}
 
 
 def detect_anomalies(state: BrainHealthState) -> BrainHealthState:
-    """Rule-based anomaly detection BEFORE Claude reasoning.
-
-    Flags:
-      - active workflow with last_status == 'error'
-      - cron workflow with no execution in lookback window
-      - workflow with > 0 errors AND 0 successes (fully broken)
-    """
+    """Rule-based anomaly detection BEFORE Claude reasoning."""
     anomalies: list[dict[str, Any]] = []
     for wf in state.get("n8n_snapshot", []):
         wf_id = wf.get("workflow_id")
         name = wf.get("name") or wf_id
         if wf.get("last_status") == "error":
-            anomalies.append(
-                {
-                    "severity": "high",
-                    "kind": "last_run_error",
-                    "workflow_id": wf_id,
-                    "name": name,
-                    "detail": f"Last execution failed at {wf.get('last_run_at')}",
-                }
-            )
+            anomalies.append({
+                "severity": "high",
+                "kind": "last_run_error",
+                "workflow_id": wf_id,
+                "name": name,
+                "detail": f"Last execution failed at {wf.get('last_run_at')}",
+            })
         if wf.get("error_count", 0) > 0 and wf.get("success_count", 0) == 0:
-            anomalies.append(
-                {
-                    "severity": "high",
-                    "kind": "fully_failing",
-                    "workflow_id": wf_id,
-                    "name": name,
-                    "detail": f"{wf.get('error_count')} errors / 0 successes in last 24h",
-                }
-            )
+            anomalies.append({
+                "severity": "high",
+                "kind": "fully_failing",
+                "workflow_id": wf_id,
+                "name": name,
+                "detail": f"{wf.get('error_count')} errors / 0 successes in last 24h",
+            })
         if wf.get("total_runs", 0) == 0 and wf.get("active"):
-            anomalies.append(
-                {
-                    "severity": "medium",
-                    "kind": "silent_workflow",
-                    "workflow_id": wf_id,
-                    "name": name,
-                    "detail": "Active but no executions in lookback window",
-                }
-            )
+            anomalies.append({
+                "severity": "medium",
+                "kind": "silent_workflow",
+                "workflow_id": wf_id,
+                "name": name,
+                "detail": "Active but no executions in lookback window",
+            })
     return {"anomalies": anomalies}
 
 
@@ -120,52 +117,52 @@ def reason_with_claude(state: BrainHealthState) -> BrainHealthState:
         "totals": {"active_workflows": total, "successful_last_run": healthy},
         "anomalies": anomalies[:25],
         "top_failing": [
-            w
-            for w in n8n_snap
-            if w.get("error_count", 0) > 0
+            w for w in n8n_snap if w.get("error_count", 0) > 0
         ][:10],
     }
-    response = llm.invoke(
-        [
-            SystemMessage(content=system_prompt),
-            HumanMessage(
-                content=(
-                    "Today is "
-                    f"{datetime.now(timezone.utc).strftime('%A %B %d, %Y')}. "
-                    "Generate the Brain Health digest from this data:\n\n"
-                    f"{user_payload}"
-                )
-            ),
-        ]
-    )
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=(
+            "Today is "
+            f"{datetime.now(timezone.utc).strftime('%A %B %d, %Y')}. "
+            "Generate the Brain Health digest from this data:\n\n"
+            f"{user_payload}"
+        )),
+    ])
     digest = response.content if isinstance(response.content, str) else str(response.content)
     return {"digest_text": digest}
 
 
 def send_digest(state: BrainHealthState) -> BrainHealthState:
-    """Telegram → Antonio."""
+    """Telegram → Antonio. Records run via MMA Supabase Bridge."""
     text = state.get("digest_text", "(no digest)")
     sent = False
     try:
         telegram_client.send_message(text)
         sent = True
     except Exception as exc:  # noqa: BLE001
-        supabase_client.log_activity(
-            type="agent.brain_health_monitor.telegram_failed",
-            source="langgraph",
-            payload={"error": str(exc)},
-        )
+        try:
+            n8n_client.call_bridge("log_activity", payload={
+                "type": "agent.brain_health_monitor.telegram_failed",
+                "source": "langgraph",
+                "data": {"error": str(exc)},
+            })
+        except Exception:
+            pass
     summary = {
         "ran_at": datetime.now(timezone.utc).isoformat(),
         "workflows_audited": len(state.get("n8n_snapshot", [])),
         "anomalies_found": len(state.get("anomalies", [])),
         "telegram_sent": sent,
     }
-    supabase_client.log_activity(
-        type="agent.brain_health_monitor.run",
-        source="langgraph",
-        payload=summary,
-    )
+    try:
+        n8n_client.call_bridge("log_activity", payload={
+            "type": "agent.brain_health_monitor.run",
+            "source": "langgraph",
+            "data": summary,
+        })
+    except Exception as exc:  # noqa: BLE001
+        print(f"[brain_health_monitor] bridge log_activity failed: {exc}")
     return {"telegram_sent": sent, "run_summary": summary}
 
 
