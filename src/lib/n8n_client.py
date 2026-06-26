@@ -86,7 +86,7 @@ def workflow_health_snapshot(
                 "workflow_id": wf_id,
                 "name": wf.get("name"),
                 "active": wf.get("active", False),
-                "trigger_count": len(wf.get("triggerCount", []) or []),
+                "trigger_count": wf.get("triggerCount", 0) or 0,
                 "last_run_at": last.get("startedAt") if last else None,
                 "last_status": last.get("status") if last else None,
                 "success_count": success,
