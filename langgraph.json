@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "brain_health_monitor": "./src/agents/brain_health_monitor.py:graph"
+    "brain_health_monitor": "./src/agents/brain_health_monitor.py:graph",
+    "contact_sync": "./src/agents/contact_sync.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
