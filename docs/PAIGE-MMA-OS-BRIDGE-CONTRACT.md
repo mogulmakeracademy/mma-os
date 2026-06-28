@@ -37,32 +37,32 @@ Content-Type: application/json
 
 | field | type | notes |
 |---|---|---|
-| `email` | string | The only hard requirement. Used as universal join key. |
+| `email` | string | The only hard requirement. Universal join key. |
 
 ### Optional but consumed (the more, the better)
 
 | field | type | notes |
 |---|---|---|
-| `first_name` | string | Used for CRM upsert + Telegram display |
-| `last_name` | string | Used for CRM upsert |
-| `source` | string | Default: `"unknown"`. Recommend: `"paige_public_signup"` |
-| `persona` | string | `"auto"` `"credit"` `"funding"` `"business"` — gets tagged as `persona:<value>` |
-| `funding_goal_cents` | int | Goal amount in cents. Drives qualification. |
-| `has_entity` | bool | Whether they have an LLC/Corp set up |
-| `entity_state` | string | If has_entity: which state |
-| `business_type` | string | Industry / business model |
-| `credit_snapshot` | object | `{personal_fico, business_credit_status, ...}` — stored verbatim |
-| `attribution_source` | string | Where they heard about MMA (Workshop, YouTube, referral, etc.) |
-| `lifecycle_stage` | string | Paige routing hint: `"lead"` `"workspace_ready"` `"coach_qualify"` |
-| `next_path` | string | Paige decided route: `"/workspace"` or `"/signup/coach-qualify"` |
+| `first_name` | string | CRM upsert + Telegram display |
+| `last_name` | string | CRM upsert |
+| `source` | string | Default `"unknown"`. Recommend `"paige_public_signup"` |
+| `persona` | string | `auto` / `credit` / `funding` / `business` — tagged as `persona:<value>` |
+| `funding_goal_cents` | int | Drives qualification |
+| `has_entity` | bool | Has LLC/Corp |
+| `entity_state` | string | If has_entity: state |
+| `business_type` | string | Industry / model |
+| `credit_snapshot` | object | `{personal_fico, business_credit_status, ...}` |
+| `attribution_source` | string | Where they heard about MMA |
+| `lifecycle_stage` | string | Paige routing hint |
+| `next_path` | string | Paige route decision |
 
 ### Anything else
 
-Send it. Extras land in `agent_calls.input` as JSONB. Zero risk of breaking the bridge with new fields.
+Send it. Extras land in `agent_calls.input` JSONB. Zero schema risk.
 
 ## Qualification logic (sales_dept v4)
 
-| Condition | Qualification | Tags applied | Telegram severity |
+| Condition | Qualification | Tags | Telegram severity |
 |---|---|---|---|
 | `funding_goal_cents >= 5,000,000` AND `has_entity == true` | **BTF_QUALIFIED** | `new_lead`, `paige_signup`, `btf_qualified_lead`, `persona:<x>` | **warning** (call ASAP) |
 | `funding_goal_cents > 0` (any goal) | **LAUNCHPAD** | `new_lead`, `paige_signup`, `launchpad_lead`, `persona:<x>` | info |
@@ -70,32 +70,32 @@ Send it. Extras land in `agent_calls.input` as JSONB. Zero risk of breaking the 
 
 ## What sales_dept does on receipt
 
-1. **CRM upsert** — fires `crm_orchestrator.upsert_contact` (triggers Paige mirror per Doctrine §82)
-2. **Smart Telegram notify** — different message + severity per qualification tier
-3. **Logs everything to `agent_calls`** — full audit trail with timing
+1. CRM upsert (triggers Paige mirror per Doctrine §82)
+2. Smart Telegram notify (severity per qualification)
+3. Logs to `agent_calls` (full audit trail)
 
 ## Failure modes
 
 | Failure | Behavior |
 |---|---|
-| Missing `email` | Returns `{"error": "email required"}`. Paige should validate before sending. |
-| Bridge timeout | sales_dept returns error in `agent_calls.output`, no client-facing impact |
+| Missing `email` | Returns `{"error": "email required"}` |
+| Bridge timeout | Logged, no client-facing impact |
 | Telegram down | Logged, classification still recorded |
-| Bad field types | Coerced safely (int() with default 0) |
+| Bad field types | Coerced safely (int() default 0) |
 
 ## Versioning
 
 - **v1** (sales_dept v3): `email`, `first_name`, `last_name`, `source` only
-- **v2** (sales_dept v4, current): adds persona/funding/entity/credit/attribution + smart qualification
+- **v2** (sales_dept v4, current): adds rich fields + smart qualification
 
-**No payload change required from Paige to upgrade.** v2 is purely additive.
+**No payload change required from Paige to upgrade.** v2 is additive.
 
-## For Lovable: what would help most
+## For Lovable: what helps most
 
-1. Send `funding_goal_cents` as integer (not string)
-2. Send `has_entity` as boolean
-3. Send `persona` from the wizard
-4. Include `source: "paige_public_signup"` so analytics know where leads came from
-5. `wait: false` on the bridge call to keep /signup snappy
+1. `funding_goal_cents` as integer (not string)
+2. `has_entity` as boolean
+3. `persona` from the wizard
+4. `source: "paige_public_signup"`
+5. `wait: false` on the bridge call
 
-Everything else is bonus. Bridge is type-safe via the `BridgeVerb` enum on Paige side.
+Everything else is bonus.
