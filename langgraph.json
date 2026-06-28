@@ -6,7 +6,9 @@
     "customer_memory": "./src/agents/customer_memory.py:graph",
     "master_orchestrator": "./src/agents/master_orchestrator.py:graph",
     "comms_orchestrator": "./src/agents/comms_orchestrator.py:graph",
-    "comms_dx": "./src/agents/comms_dx.py:graph"
+    "comms_dx": "./src/agents/comms_dx.py:graph",
+    "revenue_orchestrator": "./src/agents/revenue_orchestrator.py:graph",
+    "revenue_dx": "./src/agents/revenue_dx.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
