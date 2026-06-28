@@ -1,9 +1,9 @@
 """
-Comms Domain Orchestrator — LangGraph v2
+Comms Domain Orchestrator â LangGraph v2
 v2 changes:
   - DIRECT Telegram Bot API call (bypass mma-os-bridge which was proxying to Paige with bad creds)
-  - TASK_REGISTRY now has aliases — LLM action 'send_telegram_message' aliases to 'send_telegram'
-  - Fuzzy task resolution per Doctrine §96 — if no exact/alias match, default to notify_admin
+  - TASK_REGISTRY now has aliases â LLM action 'send_telegram_message' aliases to 'send_telegram'
+  - Fuzzy task resolution per Doctrine Â§96 â if no exact/alias match, default to notify_admin
   - Support reply_to_chat_id in payload for two-way Telegram (future-ready)
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "5188669161")  # Antonio's
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 MMA_OS_BRIDGE_API_KEY = os.environ.get("MMA_OS_BRIDGE_API_KEY", "")
 
-# Doctrine §96: task aliases for LLM-flexibility
+# Doctrine Â§96: task aliases for LLM-flexibility
 TASK_REGISTRY = {
     "send_telegram":       {"specialist": "telegram_bot_api",  "via": "direct_telegram", "aliases": ["send_telegram_message", "telegram", "send_tg", "tg_send"]},
     "send_admin_alert":    {"specialist": "telegram_bot_api",  "via": "direct_telegram", "aliases": ["admin_alert", "alert_admin", "notify_admin_telegram"]},
@@ -30,7 +30,7 @@ TASK_REGISTRY = {
 }
 
 def _resolve_task(action_str):
-    """Doctrine §96: exact match → alias match → fuzzy substring → default to notify_admin."""
+    """Doctrine Â§96: exact match â alias match â fuzzy substring â default to notify_admin."""
     if not action_str:
         return "notify_admin"
     action = action_str.strip().lower()
@@ -64,24 +64,45 @@ class CommsState(TypedDict, total=False):
     summary: str
     error: Optional[str]
 
-def _telegram_send(text, chat_id=None, reply_to_message_id=None):
-    """Direct Telegram Bot API call. Bypasses bridge for reliability."""
+def _telegram_send(text, chat_id=None, reply_to_message_id=None, parse_mode="Markdown"):
+    """Send to Telegram with belt-and-suspenders fallback: try Markdown first; on HTTP 400 parse error retry as plain text.
+    Doctrine §97 cousin: never trust dynamic content in Markdown formatting."""
     if not TELEGRAM_BOT_TOKEN:
-        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not set in env"}
-    target = chat_id or TELEGRAM_CHAT_ID
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not set"}
+    target = chat_id or ANTONIO_CHAT_ID
     if not target:
-        return {"ok": False, "error": "no chat_id (TELEGRAM_CHAT_ID env or payload.chat_id)"}
+        return {"ok": False, "error": "no chat_id and no ANTONIO_CHAT_ID env"}
+    body = {"chat_id": str(target), "text": text}
+    if parse_mode:
+        body["parse_mode"] = parse_mode
+    if reply_to_message_id:
+        body["reply_to_message_id"] = reply_to_message_id
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        body = {"chat_id": target, "text": text, "parse_mode": "Markdown"}
-        if reply_to_message_id:
-            body["reply_to_message_id"] = reply_to_message_id
         with httpx.Client(timeout=15.0) as client:
-            r = client.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json=body)
+            r = client.post(url, json=body)
             try:
                 data = r.json()
             except Exception:
                 data = {"raw": r.text[:200]}
-            return {"ok": data.get("ok", False), "telegram_response": data, "http_status": r.status_code}
+            # Belt-and-suspenders: if Markdown parse failed, retry without parse_mode
+            fallback_used = False
+            if r.status_code == 400 and parse_mode and isinstance(data, dict):
+                desc = str(data.get("description") or "").lower()
+                if "parse" in desc or "entity" in desc:
+                    body.pop("parse_mode", None)
+                    r = client.post(url, json=body)
+                    try:
+                        data = r.json()
+                    except Exception:
+                        data = {"raw": r.text[:200]}
+                    fallback_used = True
+            return {
+                "ok": bool(isinstance(data, dict) and data.get("ok")),
+                "http_status": r.status_code,
+                "telegram_response": data,
+                "fallback_to_plain": fallback_used
+            }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -143,8 +164,8 @@ def dispatch_to_specialist(state):
         # Add a category prefix if provided
         category = payload.get("category")
         severity = payload.get("severity", "info")
-        prefix_map = {"info": "ℹ️", "warning": "⚠️", "error": "🚨", "success": "✅"}
-        prefix = prefix_map.get(severity, "ℹ️")
+        prefix_map = {"info": "â¹ï¸", "warning": "â ï¸", "error": "ð¨", "success": "â"}
+        prefix = prefix_map.get(severity, "â¹ï¸")
         if category:
             full_text = f"{prefix} *{category}*\n\n{message}"
         else:
