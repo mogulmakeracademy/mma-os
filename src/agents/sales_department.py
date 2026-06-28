@@ -1,8 +1,8 @@
 """
-Sales Department v2 â LangGraph (Tier -1)
+Sales Department v2 Ã¢ÂÂ LangGraph (Tier -1)
 Department Head composing crm + revenue + comms for BUILD-to-FUND sales operations.
 
-Doctrine Â§99 (BTF Canon) compliance â owns the BTF sales motion end-to-end.
+Doctrine ÃÂ§99 (BTF Canon) compliance Ã¢ÂÂ owns the BTF sales motion end-to-end.
 
 BTF-specific tasks (Stream #2):
   - log_btf_close          Record a new closed BTF deal -> btf_deals table + notify
@@ -17,7 +17,7 @@ Existing tasks:
   - handle_new_lead        composite: crm.upsert + tag + notify
   - escalate_hot_lead
 
-Doctrine Â§97 compliance: no backslashes in f-string expressions. DOLLAR pattern for currency.
+Doctrine ÃÂ§97 compliance: no backslashes in f-string expressions. DOLLAR pattern for currency.
 """
 from __future__ import annotations
 import os, time
@@ -40,7 +40,7 @@ LANGGRAPH_BRIDGE_URL = MMA_OS_FUNCTIONS_BASE + "/langgraph-bridge"
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 LANGGRAPH_WRITER_API_KEY = os.environ.get("LANGGRAPH_WRITER_API_KEY", "")
 
-# BTF phase progression rules per Doctrine Â§99
+# BTF phase progression rules per Doctrine ÃÂ§99
 BTF_PHASES = ["pre_build", "build", "stack", "fund", "funded"]
 BTF_PHASE_NEXT = {"pre_build": "build", "build": "stack", "stack": "fund", "fund": "funded", "funded": "funded"}
 
@@ -110,7 +110,7 @@ def _sb_patch(table, pk_field, pk_value, payload, prefer_return=False):
     except Exception: return {"ok": False}
 
 def _log_touchpoint(btf_deal_id, layer, touchpoint_type, direction="outbound", metadata=None):
-    """Doctrine §103: log every customer touchpoint to btf_touchpoints audit table."""
+    """Doctrine Â§103: log every customer touchpoint to btf_touchpoints audit table."""
     if not btf_deal_id: return {"ok": False, "skip_reason": "no_deal_id"}
     payload = {
         "btf_deal_id": btf_deal_id,
@@ -248,12 +248,46 @@ def handle_specific(state):
     if task in ("list_active_deals", "get_pipeline_health", "get_btf_pipeline"):
         return state
     if task == "handle_new_lead":
+        # sales_dept v4 - smart qualification per Paige bridge contract (docs/PAIGE-MMA-OS-BRIDGE-CONTRACT.md)
         email = payload.get("email")
         if not email: return {**state, "error": "email required"}
+        first_name = payload.get("first_name", "") or ""
+        last_name = payload.get("last_name", "") or ""
+        source = payload.get("source", "unknown") or "unknown"
+        persona = (payload.get("persona") or "").strip()
+        try: funding_goal_cents = int(payload.get("funding_goal_cents") or 0)
+        except Exception: funding_goal_cents = 0
+        has_entity = bool(payload.get("has_entity", False))
+        entity_state = payload.get("entity_state", "") or ""
+        # Qualification per Doctrine S100 (Revenue Ladder)
+        if funding_goal_cents >= 5000000 and has_entity:
+            qualification = "BTF_QUALIFIED"
+            qual_tag = "btf_qualified_lead"
+            severity = "warning"
+        elif funding_goal_cents > 0:
+            qualification = "LAUNCHPAD"
+            qual_tag = "launchpad_lead"
+            severity = "info"
+        else:
+            qualification = "EXPLORER"
+            qual_tag = "explorer_lead"
+            severity = "info"
+        tags = ["new_lead", "paige_signup", qual_tag]
+        if persona: tags.append("persona:" + persona)
         steps = []
-        s1 = _langgraph_fire("crm_orchestrator", {"task": "upsert_contact", "payload": {"email": email, "first_name": payload.get("first_name", ""), "last_name": payload.get("last_name", ""), "tags": ["new_lead", "sales_dept_routed"]}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "sales_new_lead"}, wait=True, timeout_ms=15000)
+        # 1) CRM upsert (fires Paige mirror per Doctrine S82)
+        s1 = _langgraph_fire("crm_orchestrator", {"task": "upsert_contact", "payload": {"email": email, "first_name": first_name, "last_name": last_name, "tags": tags}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "sales_new_lead"}, wait=True, timeout_ms=15000)
         steps.append({"step": "upsert_contact", "result": s1})
-        s2 = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {"message": "New lead routed by Sales Dept: " + email + " (source: " + payload.get("source", "unknown") + ")", "category": "New Lead", "severity": "info"}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "sales_new_lead"}, wait=True, timeout_ms=15000)
+        # 2) Smart Telegram notify based on qualification
+        name_display = (first_name + " " + last_name).strip() or email
+        goal_display = (DOLLAR + str(funding_goal_cents // 100)) if funding_goal_cents > 0 else "(no goal)"
+        if qualification == "BTF_QUALIFIED":
+            msg = "[HOT] BTF-QUALIFIED LEAD: " + name_display + " | goal: " + goal_display + " | entity: " + (entity_state or "yes") + " | persona: " + (persona or "n/a") + " | CALL ASAP"
+        elif qualification == "LAUNCHPAD":
+            msg = "[NEW] LaunchPad lead: " + name_display + " | goal: " + goal_display + " | persona: " + (persona or "n/a") + " | source: " + source
+        else:
+            msg = "[NEW] Explorer lead: " + name_display + " | source: " + source + " | persona: " + (persona or "n/a")
+        s2 = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {"message": msg, "category": "New Lead - " + qualification, "severity": severity}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "sales_new_lead"}, wait=True, timeout_ms=15000)
         steps.append({"step": "notify", "result": s2})
         return {**state, "composite_steps": steps, "comms_result": s2}
     if task == "escalate_hot_lead":
