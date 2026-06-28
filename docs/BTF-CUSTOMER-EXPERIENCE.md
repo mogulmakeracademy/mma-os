@@ -1,5 +1,5 @@
 # BTF Customer Experience Blueprint v1
-# Source: Antonio Cook | Codified: 2026-06-28 | Doctrine Â§103
+# Source: Antonio Cook | Codified: 2026-06-28 | Doctrine ÃÂ§103
 # Status: CANONICAL. Source of truth for ALL BTF client touchpoints.
 
 ## Purpose
@@ -15,62 +15,62 @@ Define every touchpoint a BUILD-to-FUND client experiences from close to funded 
 | Telegram (Antonio) | New close, phase advance, doc stalled, payment, funded | Real-time events | comms_orchestrator | event-driven |
 | Live human (coach) | Phase kickoff, monthly review, escalation response | MONTHLY + triggered | Antonio Daniel / Tony Robinson | monthly |
 
-**Critical clarification:** Coach human check-ins are MONTHLY, not weekly. State filings + credit bureau reporting take WEEKS â weekly coach calls would feel empty. Email cadence stays weekly for momentum + visibility.
+**Critical clarification:** Coach human check-ins are MONTHLY, not weekly. State filings + credit bureau reporting take WEEKS Ã¢ÂÂ weekly coach calls would feel empty. Email cadence stays weekly for momentum + visibility.
 
 ## Complete Timeline
 
-### Day 0 â Close Event
+### Day 0 Ã¢ÂÂ Close Event
 
 Triggered by: BTF deal logged via sales_department.log_btf_close
 
 Touchpoints fired immediately:
   - **Telegram to Antonio**: "[BTF] NEW CLOSE: {full_name} | {payment_plan} | source: {source}"
-  - **Email to client** (from antonio@mogulmakeracademy.com): "Welcome to BUILD-to-FUND â let us get you funded" â personal welcome + invite link + Week 1 expectations
+  - **Email to client** (from antonio@mogulmakeracademy.com): "Welcome to BUILD-to-FUND Ã¢ÂÂ let us get you funded" Ã¢ÂÂ personal welcome + invite link + Week 1 expectations
   - **Paige**: workspace row created, coach auto-assigned via round-robin (unless manual_handling=true)
   - **btf_touchpoints row logged**: type=close_email_sent, template=welcome_v1
 
-### Day 1 â Activation
+### Day 1 Ã¢ÂÂ Activation
 
   - **In-portal welcome banner**: "Welcome back, {first_name}. Your assigned coach is {coach_name}. They will be in touch shortly."
   - **Telegram to Antonio**: "[BTF] {first_name} logged in to workspace for first time"
-  - **Email to client** (24h after invite if not logged in): "Your workspace is ready â let us start"
+  - **Email to client** (24h after invite if not logged in): "Your workspace is ready Ã¢ÂÂ let us start"
 
-### Day 1-3 â Intake
+### Day 1-3 Ã¢ÂÂ Intake
 
   - **In-portal nudge**: "Complete your intake form so your coach can prepare Phase 1"
   - **On intake submission**: portal confetti + coach notified
-  - **Telegram to Antonio** if intake stalled >48h: "[BTF] {name} has not started intake â coach should reach out"
+  - **Telegram to Antonio** if intake stalled >48h: "[BTF] {name} has not started intake Ã¢ÂÂ coach should reach out"
   - **Email to client** if stalled >72h: gentle "Your coach is waiting for your intake to get started"
 
-### Day 3 â Phase 1 BUILD Kickoff
+### Day 3 Ã¢ÂÂ Phase 1 BUILD Kickoff
 
-  - **Coach human touchpoint**: Phase 1 Kickoff Call (30 min) â walks client through Phase 1 plan
+  - **Coach human touchpoint**: Phase 1 Kickoff Call (30 min) Ã¢ÂÂ walks client through Phase 1 plan
   - **In-portal**: Phase 1 checklist activated with assigned items
   - **Email to client** post-call: "Here is your Phase 1 plan + first 3 documents we need"
   - **In-portal doc requests posted** by coach
   - **Telegram to Antonio**: "[BTF] {name} Phase 1 kickoff complete"
 
-### Day 3 to ~Day 30 â Phase 1: BUILD (Formation + Fundable Foundation)
+### Day 3 to ~Day 30 Ã¢ÂÂ Phase 1: BUILD (Formation + Fundable Foundation)
 
 Expected duration: 2-6 weeks (state filing dependency). Coach checks in MONTHLY.
 
 Recurring touchpoints:
-  - **Email weekly Friday** (auto-generated from progress data): "Your Week with MMA â Phase 1 progress"
-  - **In-portal real-time**: every doc upload â coach notified, every coach response â client notified
+  - **Email weekly Friday** (auto-generated from progress data): "Your Week with MMA Ã¢ÂÂ Phase 1 progress"
+  - **In-portal real-time**: every doc upload Ã¢ÂÂ coach notified, every coach response Ã¢ÂÂ client notified
   - **Telegram to Antonio**: on each Phase 1 item complete + at 50% complete + at 100% complete
   - **Telegram to Antonio** for STALL alerts: any item assigned-to-client open >7 days, any doc request unfulfilled >14 days
 
 End-of-phase:
-  - **Coach human touchpoint**: Monthly Phase 1 Review (~Day 30) â review, set Phase 2 expectations
-  - **All Phase 1 items complete** â Phase 2 unlock event
+  - **Coach human touchpoint**: Monthly Phase 1 Review (~Day 30) Ã¢ÂÂ review, set Phase 2 expectations
+  - **All Phase 1 items complete** Ã¢ÂÂ Phase 2 unlock event
 
-### Phase 1 â Phase 2 Transition
+### Phase 1 Ã¢ÂÂ Phase 2 Transition
 
   - **In-portal**: confetti animation, "Phase 1 complete!" banner, Phase 2 STACK unlocked
-  - **Email celebration**: "You finished Phase 1 â formation locked, foundation solid"
+  - **Email celebration**: "You finished Phase 1 Ã¢ÂÂ formation locked, foundation solid"
   - **Telegram to Antonio**: "[BTF] {name} ADVANCED to Phase 2 STACK"
 
-### ~Day 30 to ~Day 120 â Phase 2: STACK (Business Credit, In Order)
+### ~Day 30 to ~Day 120 Ã¢ÂÂ Phase 2: STACK (Business Credit, In Order)
 
 Expected duration: 60-90 days (tradeline reporting takes 30-90 days per vendor). Coach checks in MONTHLY.
 
@@ -81,43 +81,43 @@ Recurring touchpoints:
   - **Telegram to Antonio**: on each tradeline reporting confirmed, on each new tradeline opened, stalled alerts same as Phase 1
 
 End-of-phase:
-  - **Coach human touchpoint**: Monthly Phase 2 Review â confirm credit file reporting properly + ready for Phase 3
-  - **Phase 2 complete** â Phase 3 unlock event
+  - **Coach human touchpoint**: Monthly Phase 2 Review Ã¢ÂÂ confirm credit file reporting properly + ready for Phase 3
+  - **Phase 2 complete** Ã¢ÂÂ Phase 3 unlock event
 
-### ~Day 120 to ~Day 180 â Phase 3: FUND (Lender Matching + Application)
+### ~Day 120 to ~Day 180 Ã¢ÂÂ Phase 3: FUND (Lender Matching + Application)
 
 Expected duration: 30-90 days. Coach engagement INCREASES (this is the closing phase).
 
 Recurring touchpoints:
-  - **Email WEEKLY (not Friday â when relevant)**: lender match updates, application status
+  - **Email WEEKLY (not Friday Ã¢ÂÂ when relevant)**: lender match updates, application status
   - **In-portal real-time**: every lender match + application status change
   - **Telegram to Antonio**: every application submitted, response received, approval/denial
   - **Coach human touchpoint**: BI-WEEKLY in Phase 3 (more urgency at the close)
 
-### Funded Event â The Celebration Touchpoint
+### Funded Event Ã¢ÂÂ The Celebration Touchpoint
 
 This is THE moment. Maximum celebration energy.
 
   - **In-portal**: massive celebration screen, confetti, FUNDED badge, amount + lender + terms
-  - **Email**: "You did it. You are funded." â personal video from Antonio (record once, reuse)
+  - **Email**: "You did it. You are funded." Ã¢ÂÂ personal video from Antonio (record once, reuse)
   - **Telegram to Antonio**: "[BTF] {name} FUNDED for ${amount} via {lender}"
   - **Share your win prompt**: generates social-ready graphic (MMA brand frame) for the client to post
   - **Coach human touchpoint**: 30-min Funded Debrief call
   - **btf_touchpoints log**: type=funded_celebration, metadata.amount, metadata.lender
 
-### Post-Funded â Continued Relationship
+### Post-Funded Ã¢ÂÂ Continued Relationship
 
 The relationship doesn not end at funded. It transforms.
 
   - **Email monthly**: "How is the business doing? Here is what we are seeing in the credit landscape"
   - **Email on milestones**: 6-month anniversary, 1-year anniversary
   - **Email on birthday** (from Antonio personally)
-  - **In-portal**: continued access, can keep tracking, can spin up business #2 â graduates to Paige
+  - **In-portal**: continued access, can keep tracking, can spin up business #2 Ã¢ÂÂ graduates to Paige
   - **Workshop Wednesday invite**: continues indefinitely
   - **Coach human touchpoint**: quarterly check-in (less frequent, warm)
   - **Telegram to Antonio**: on any anniversary milestone
 
-## Stall Detection â Automated Alerts
+## Stall Detection Ã¢ÂÂ Automated Alerts
 
 Antonio gets a Telegram alert when ANY of these conditions trigger:
 
@@ -133,7 +133,7 @@ Each stall alert includes: Client name, what is stalled, assigned coach, suggest
 
 ## Email Lifecycle Catalog (canonical templates)
 
-All templates stored in Notion (Doctrine Â§64 pointer pattern). Engine pulls content at send time, never copies.
+All templates stored in Notion (Doctrine ÃÂ§64 pointer pattern). Engine pulls content at send time, never copies.
 
 | ID | Trigger | From | When |
 |---|---|---|---|
@@ -162,12 +162,12 @@ All fire via comms_orchestrator with the belt-and-suspenders Markdown fallback.
 | New BTF close | success | NEW CLOSE: {name} \| {plan} \| source: {src} |
 | Client first login | info | {name} logged in to workspace first time |
 | Intake submitted | success | {name} completed intake |
-| Phase advance | success | {name} ADVANCED {old_phase} â {new_phase} |
+| Phase advance | success | {name} ADVANCED {old_phase} Ã¢ÂÂ {new_phase} |
 | Item complete (50%) | info | {name} 50% through Phase {n} |
-| Item complete (100%) | success | {name} 100% Phase {n} complete â ready to advance |
+| Item complete (100%) | success | {name} 100% Phase {n} complete Ã¢ÂÂ ready to advance |
 | Payment received | success | {name} +${amount} \| collected ${total} of $4,997 |
 | Funded | success | {name} FUNDED for ${amount} via {lender} |
-| Intake stalled 72h | warning | {name} intake stalled >72h â coach should reach out |
+| Intake stalled 72h | warning | {name} intake stalled >72h Ã¢ÂÂ coach should reach out |
 | Doc stalled 14d | warning | {name} doc "{title}" unfulfilled >14d |
 | Phase stalled 2x duration | warning | {name} Phase {n} open {days}d (expected {expected}) |
 | Coach thread idle 14d | warning | {name} has not heard from coach in 14d |
@@ -194,14 +194,14 @@ CREATE INDEX btf_touchpoints_deal_idx ON public.btf_touchpoints (btf_deal_id, cr
 CREATE INDEX btf_touchpoints_type_idx ON public.btf_touchpoints (touchpoint_type);
 ```
 
-## Doctrine Â§103 â Touchpoint Hygiene
+## Doctrine ÃÂ§103 Ã¢ÂÂ Touchpoint Hygiene
 
 Every touchpoint MUST:
   - Have a clear PURPOSE (educate, request, celebrate, retain, alert)
   - Log to btf_touchpoints (full audit trail)
-  - Respect Doctrine Â§102 (Multi-Door Entry) â do not assume client came from any prior touchpoint
+  - Respect Doctrine ÃÂ§102 (Multi-Door Entry) Ã¢ÂÂ do not assume client came from any prior touchpoint
   - Use the canonical voice (founder-direct, candid, no corporate softening)
-  - White-label per Doctrine Â§46/Â§123 (no "Paige" exposed to clients)
+  - White-label per Doctrine ÃÂ§46/ÃÂ§123 (no "Paige" exposed to clients)
   - Have a STALL VERSION (what fires if the expected response does not happen)
 
 ## Build Order (implementation roadmap)
@@ -237,12 +237,12 @@ that are outside our control. But the PROGRAM CADENCE we sell + run by is 90 day
 
 Updated phase timing targets (compressed sprint):
   - Phase 1 BUILD:  Days 1-30  (entity + EIN + address + banking + credibility markers)
-  - Phase 2 STACK:  Days 30-60 (vendor + retail + financial tradelines opened — reporting may extend past 60 if bureaus lag)
+  - Phase 2 STACK:  Days 30-60 (vendor + retail + financial tradelines opened â reporting may extend past 60 if bureaus lag)
   - Phase 3 FUND:   Days 60-90 (lender match + application + submission)
   - Buffer Days 90-180: bureau lag + lender response loops, but we celebrate the 90-day target hit
 
 Client messaging principle: "We are sprinting. Some pieces of the system
-(state filings, bureau updates) run on their clock, not ours — that's why some
+(state filings, bureau updates) run on their clock, not ours â that's why some
 weeks feel quiet. The 90 days is the work we put in. The result follows."
 
 Stall detection thresholds re-tuned for the 90-day program:
@@ -250,6 +250,34 @@ Stall detection thresholds re-tuned for the 90-day program:
   - Phase 2 stalled if open >45 days
   - Phase 3 stalled if open >45 days
   - Total program flagged for executive review if >150 days from close without funded outcome
+
+All email cadence stays unchanged. Coach human cadence stays MONTHLY (still right
+for sprint pace â monthly = 3 check-ins across the 90 days, matches phase rhythm).
+
+## CORRECTION LOG
+
+2026-06-28  PROGRAM IS 90 DAYS, not 3-6 months. Per Antonio direct.
+
+The canonical promise to BTF clients: a 90-day sprint to get them fully set up
+(BUILD + STACK + FUND complete). Real-world delivery typically lands 120-180
+days from close due to state filing latency + credit bureau reporting cycles
+that are outside our control. But the PROGRAM CADENCE we sell + run by is 90 days.
+
+Updated phase timing targets (compressed sprint):
+  - Phase 1 BUILD:  Days 1-30  (entity + EIN + address + banking + credibility markers)
+  - Phase 2 STACK:  Days 30-60 (vendor + retail + financial tradelines opened)
+  - Phase 3 FUND:   Days 60-90 (lender match + application + submission)
+  - Buffer Days 90-180: bureau lag + lender response loops, but we celebrate the 90-day target hit
+
+Client messaging principle: "We are sprinting. Some pieces of the system
+(state filings, bureau updates) run on their clock, not ours — that is why some
+weeks feel quiet. The 90 days is the work we put in. The result follows."
+
+Stall detection thresholds re-tuned for the 90-day program:
+  - Phase 1 stalled if open >45 days (1.5x the 30-day target)
+  - Phase 2 stalled if open >45 days
+  - Phase 3 stalled if open >45 days
+  - Total program flagged for executive review if >150 days from close without funded
 
 All email cadence stays unchanged. Coach human cadence stays MONTHLY (still right
 for sprint pace — monthly = 3 check-ins across the 90 days, matches phase rhythm).
