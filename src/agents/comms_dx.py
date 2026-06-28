@@ -1,8 +1,10 @@
 """
-Comms-DX Agent — LangGraph v3
-v3 fix: treat mma-os-bridge "Unknown verb" 200 response as HEALTHY (proves the
-function is reachable and processing requests, just doesn't know the health verb).
-Eliminates the fallback Telegram spam from v2.
+Comms-DX Agent — LangGraph v3.1
+v3.1 fixes:
+  - _is_healthy now accepts 200 OR 400 status when treat_unknown_verb_as_healthy
+    is set AND body contains "unknown verb" — bridges return 400 for unknown verbs
+  - system_health upsert explicitly sets last_check_at and updated_at to now()
+    (previously relied on DB INSERT defaults which don't fire on UPDATE)
 """
 from __future__ import annotations
 import os, time
@@ -64,16 +66,16 @@ def _key_for(env_name):
     return os.environ.get(env_name, "")
 
 def _is_healthy(res, treat_unknown_verb_as_healthy=False):
-    if res["status"] != 200:
-        return False
     body = res["body"] if isinstance(res["body"], dict) else {}
-    # Standard healthy signals
-    if body.get("ok") is True or body.get("n8n_reachable") is True or body.get("mgmt_reachable") is True or body.get("langgraph_reachable") is True or body.get("integration") is not None:
+    err_text = str(body.get("error") or "").lower()
+    
+    # v3.1: detect "unknown verb" first — proves function is alive even if status != 200
+    if treat_unknown_verb_as_healthy and "unknown verb" in err_text:
         return True
-    # v3: function is alive but doesn't know the verb -> still healthy
-    if treat_unknown_verb_as_healthy:
-        err = (body.get("error") or "").lower()
-        if "unknown verb" in err or "verb" in err:
+    
+    # Standard health: 200 + ok signal
+    if res["status"] == 200:
+        if body.get("ok") is True or body.get("n8n_reachable") is True or body.get("mgmt_reachable") is True or body.get("langgraph_reachable") is True or body.get("integration") is not None:
             return True
     return False
 
@@ -112,9 +114,14 @@ def attempt_self_heal(state):
     return {**state, "heal_attempts": heal_attempts, "failures": new_failures}
 
 def update_system_health(state):
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
     for r in state.get("check_results", []) or []:
-        payload = {"agent_name": r["agent"], "status": r["status"], "domain": r["domain"], "tier": r["tier"], "details": {"raw_status": r.get("raw", {}).get("status"), "healed": r.get("healed", False)}}
-        if r["status"] != "healthy":
+        payload = {"agent_name": r["agent"], "status": r["status"], "domain": r["domain"], "tier": r["tier"], "last_check_at": now_iso, "updated_at": now_iso, "details": {"raw_status": r.get("raw", {}).get("status"), "healed": r.get("healed", False)}}
+        if r["status"] == "healthy":
+            payload["last_healthy_at"] = now_iso
+            payload["last_error"] = None
+        else:
             raw_body = r.get("raw", {}).get("body", {})
             payload["last_error"] = str(raw_body.get("error") or raw_body.get("hint") or raw_body)[:500]
         _supabase_upsert("system_health", payload, on_conflict="agent_name")
@@ -126,7 +133,7 @@ def escalate_if_failing(state):
     if not failures:
         return {**state, "escalations": []}
     bullets = "\n".join([f"- {f['agent']} -> {f['status']}" for f in failures])
-    msg = f"Comms-DX v3: {len(failures)} specialist(s) unhealthy:\n{bullets}"
+    msg = f"Comms-DX v3.1: {len(failures)} specialist(s) unhealthy:\n{bullets}"
     res = _bridge_alert(msg, severity="warning", metadata={"failures": failures, "heal_attempts": state.get("heal_attempts", [])})
     escalations.append({"channel": "telegram_admin", "result": res})
     return {**state, "escalations": escalations}
@@ -138,13 +145,13 @@ def summarize(state):
     healed = sum(1 for a in (state.get("heal_attempts", []) or []) if a["result"] == "healed")
     escalated = len(state.get("escalations", []) or [])
     if total == 0:
-        summary = "Comms-DX v3: no checks ran"
+        summary = "Comms-DX v3.1: no checks ran"
     elif healthy == total:
-        summary = f"Comms-DX v3: {healthy}/{total} healthy"
+        summary = f"Comms-DX v3.1: {healthy}/{total} healthy"
         if healed:
             summary += f" ({healed} self-healed)"
     else:
-        summary = f"Comms-DX v3: {healthy}/{total} healthy, {escalated} escalation(s) sent"
+        summary = f"Comms-DX v3.1: {healthy}/{total} healthy, {escalated} escalation(s) sent"
     return {**state, "summary": summary}
 
 def build_graph():
