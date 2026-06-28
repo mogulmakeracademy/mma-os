@@ -3,7 +3,11 @@
   "graphs": {
     "brain_health_monitor": "./src/agents/brain_health_monitor.py:graph",
     "contact_sync": "./src/agents/contact_sync.py:graph",
-      "customer_memory": "./src/agents/customer_memory.py:graph"},
+    "customer_memory": "./src/agents/customer_memory.py:graph",
+    "master_orchestrator": "./src/agents/master_orchestrator.py:graph",
+    "comms_orchestrator": "./src/agents/comms_orchestrator.py:graph",
+    "comms_dx": "./src/agents/comms_dx.py:graph"
+  },
   "env": ".env",
   "python_version": "3.11"
 }
