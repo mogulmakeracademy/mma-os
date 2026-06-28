@@ -1,14 +1,14 @@
 """
-Operations Department — LangGraph v1 (Tier -1)
+Operations Department â LangGraph v1 (Tier -1)
 The first Department Head agent. Composes multiple DX agents + monitoring orchestrator
 into business-level outputs: morning briefs, system audits, incident reports.
 
 Tasks:
-  - morning_brief         → Fires all 7 DX agents in parallel + composes consolidated digest + delivers via comms to Telegram. Default scheduled 7am ET.
-  - run_full_audit        → Comprehensive: every DX + agent_dispatches stats + Engine v4.5 last fire + Telegram digest
-  - get_uptime_stats      → Query system_health for healthy/total ratio + by-domain breakdown
-  - list_active_incidents → system_health WHERE status != healthy (escalation candidates)
-  - escalate_to_human     → urgent push via comms_orchestrator with HIGH severity
+  - morning_brief         â Fires all 7 DX agents in parallel + composes consolidated digest + delivers via comms to Telegram. Default scheduled 7am ET.
+  - run_full_audit        â Comprehensive: every DX + agent_dispatches stats + Engine v4.5 last fire + Telegram digest
+  - get_uptime_stats      â Query system_health for healthy/total ratio + by-domain breakdown
+  - list_active_incidents â system_health WHERE status != healthy (escalation candidates)
+  - escalate_to_human     â urgent push via comms_orchestrator with HIGH severity
 """
 from __future__ import annotations
 import os, time, json
@@ -100,7 +100,7 @@ def start(state):
     return {**state, "task": canonical, "call_id": call_id}
 
 def fan_out_dx(state):
-    """For morning_brief and run_full_audit — fire all 7 DX agents in parallel via langgraph-bridge."""
+    """For morning_brief and run_full_audit â fire all 7 DX agents in parallel via langgraph-bridge."""
     if state.get("task") not in ("morning_brief", "run_full_audit"):
         return state
     results = []
@@ -253,7 +253,7 @@ def summarize(state):
     if task == "list_active_incidents":
         return {**state, "summary": f"Ops.incidents: {hs.get('down', 0)} down, {hs.get('degraded', 0)} degraded"}
     if task == "escalate_to_human":
-        return {**state, "summary": f"Ops.escalate: telegram delivery {'\u2705' if cm.get('ok') else '\u26A0'}"}
+        return {**state, "summary": f"Ops.escalate: telegram delivery {"OK" if cm.get('ok') else "WARN"}"}
     return {**state, "summary": f"Ops.{task}: complete"}
 
 def build_graph():
