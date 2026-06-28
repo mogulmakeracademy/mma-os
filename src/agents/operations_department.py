@@ -1,14 +1,14 @@
 """
-Operations Department â LangGraph v1 (Tier -1)
+Operations Department Ã¢ÂÂ LangGraph v1 (Tier -1)
 The first Department Head agent. Composes multiple DX agents + monitoring orchestrator
 into business-level outputs: morning briefs, system audits, incident reports.
 
 Tasks:
-  - morning_brief         â Fires all 7 DX agents in parallel + composes consolidated digest + delivers via comms to Telegram. Default scheduled 7am ET.
-  - run_full_audit        â Comprehensive: every DX + agent_dispatches stats + Engine v4.5 last fire + Telegram digest
-  - get_uptime_stats      â Query system_health for healthy/total ratio + by-domain breakdown
-  - list_active_incidents â system_health WHERE status != healthy (escalation candidates)
-  - escalate_to_human     â urgent push via comms_orchestrator with HIGH severity
+  - morning_brief         Ã¢ÂÂ Fires all 7 DX agents in parallel + composes consolidated digest + delivers via comms to Telegram. Default scheduled 7am ET.
+  - run_full_audit        Ã¢ÂÂ Comprehensive: every DX + agent_dispatches stats + Engine v4.5 last fire + Telegram digest
+  - get_uptime_stats      Ã¢ÂÂ Query system_health for healthy/total ratio + by-domain breakdown
+  - list_active_incidents Ã¢ÂÂ system_health WHERE status != healthy (escalation candidates)
+  - escalate_to_human     Ã¢ÂÂ urgent push via comms_orchestrator with HIGH severity
 """
 from __future__ import annotations
 import os, time, json
@@ -90,7 +90,7 @@ def start(state):
     state = {**state, "error": None, "call_started_at": time.time()}
     task = (state.get("task") or "morning_brief").strip().lower()
     # Aliases
-    aliases = {"morning_brief": ["brief", "morning", "morning_briefing", "daily_brief", "ops_brief"], "run_full_audit": ["audit", "full_audit"], "get_uptime_stats": ["uptime"], "list_active_incidents": ["incidents", "active_incidents", "down_agents"], "escalate_to_human": ["escalate"]}
+    aliases = {'morning_brief': ['brief', 'morning', 'morning_briefing', 'daily_brief', 'ops_brief'], 'run_full_audit': ['audit', 'full_audit'], 'get_uptime_stats': ['uptime'], 'list_active_incidents': ['incidents', 'active_incidents', 'down_agents'], 'escalate_to_human': ['escalate']}
     canonical = task
     for canon, alist in aliases.items():
         if task == canon or task in alist:
@@ -100,7 +100,7 @@ def start(state):
     return {**state, "task": canonical, "call_id": call_id}
 
 def fan_out_dx(state):
-    """For morning_brief and run_full_audit â fire all 7 DX agents in parallel via langgraph-bridge."""
+    """For morning_brief and run_full_audit Ã¢ÂÂ fire all 7 DX agents in parallel via langgraph-bridge."""
     if state.get("task") not in ("morning_brief", "run_full_audit"):
         return state
     results = []
@@ -214,7 +214,7 @@ def deliver_brief(state):
     if state.get("task") not in ("morning_brief", "run_full_audit"):
         return state
     brief = state.get("brief_text", "(no brief generated)")
-    res = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {"message": brief, "category": "Operations Dept Morning Brief", "severity": "info"}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "operations_department", "actor": "ops_dept_head"}, wait=True, timeout_ms=20000)
+    res = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {'message': brief, 'category': 'Operations Dept Morning Brief', 'severity': 'info'}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "operations_department", "actor": "ops_dept_head"}, wait=True, timeout_ms=20000)
     return {**state, "comms_result": res}
 
 def handle_specific_task(state):
@@ -253,7 +253,7 @@ def summarize(state):
     if task == "list_active_incidents":
         return {**state, "summary": f"Ops.incidents: {hs.get('down', 0)} down, {hs.get('degraded', 0)} degraded"}
     if task == "escalate_to_human":
-        return {**state, "summary": f"Ops.escalate: telegram delivery {"OK" if cm.get('ok') else "WARN"}"}
+        return {**state, "summary": f"Ops.escalate: telegram delivery {'OK' if cm.get('ok') else 'WARN'}"}
     return {**state, "summary": f"Ops.{task}: complete"}
 
 def build_graph():
