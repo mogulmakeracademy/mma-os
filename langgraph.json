@@ -8,7 +8,9 @@
     "comms_orchestrator": "./src/agents/comms_orchestrator.py:graph",
     "comms_dx": "./src/agents/comms_dx.py:graph",
     "revenue_orchestrator": "./src/agents/revenue_orchestrator.py:graph",
-    "revenue_dx": "./src/agents/revenue_dx.py:graph"
+    "revenue_dx": "./src/agents/revenue_dx.py:graph",
+    "crm_orchestrator": "./src/agents/crm_orchestrator.py:graph",
+    "crm_dx": "./src/agents/crm_dx.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
