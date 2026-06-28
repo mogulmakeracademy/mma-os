@@ -1,5 +1,7 @@
 {
-  "dependencies": ["."],
+  "dependencies": [
+    "."
+  ],
   "graphs": {
     "brain_health_monitor": "./src/agents/brain_health_monitor.py:graph",
     "contact_sync": "./src/agents/contact_sync.py:graph",
@@ -22,7 +24,8 @@
     "operations_department": "./src/agents/operations_department.py:graph",
     "customer_success_department": "./src/agents/customer_success_department.py:graph",
     "sales_department": "./src/agents/sales_department.py:graph",
-    "launchpad_orchestrator": "./src/agents/launchpad_orchestrator.py:graph"
+    "launchpad_orchestrator": "./src/agents/launchpad_orchestrator.py:graph",
+    "btf_stall_detector": "./src/agents/btf_stall_detector.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
