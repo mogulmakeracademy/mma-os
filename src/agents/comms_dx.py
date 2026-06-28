@@ -1,9 +1,8 @@
 """
-Comms-DX Agent — LangGraph v2 (URL collision fix)
-Doctrine §90: Diagnostic+Fix child for the Comms domain.
-v2: switched from SUPABASE_URL (which collided with other agents' env vars
-pointing to different projects) to MMA_OS_FUNCTIONS_BASE — canonical URL
-to our mma-os Supabase project's functions endpoint, hardcoded default.
+Comms-DX Agent — LangGraph v3
+v3 fix: treat mma-os-bridge "Unknown verb" 200 response as HEALTHY (proves the
+function is reachable and processing requests, just doesn't know the health verb).
+Eliminates the fallback Telegram spam from v2.
 """
 from __future__ import annotations
 import os, time
@@ -11,7 +10,6 @@ from typing import TypedDict, Optional, List
 import httpx
 from langgraph.graph import StateGraph, START, END
 
-# Canonical mma-os functions base. ALWAYS hits our project — no env var collision possible.
 MMA_OS_FUNCTIONS_BASE = os.environ.get("MMA_OS_FUNCTIONS_BASE", "https://slcqeiqcrhepicqxqjng.supabase.co/functions/v1")
 MMA_OS_SUPABASE_URL = os.environ.get("MMA_OS_SUPABASE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -22,7 +20,7 @@ EDGE_FN_WRITER_API_KEY = os.environ.get("EDGE_FN_WRITER_API_KEY", "")
 LANGGRAPH_WRITER_API_KEY = os.environ.get("LANGGRAPH_WRITER_API_KEY", "")
 
 HEALTH_CHECKS = [
-    {"agent": "mma-os-bridge",        "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge",        "key_env": "MMA_OS_BRIDGE_API_KEY",  "body": {"verb": "health"}, "fallback_body": {"verb": "push_admin_notification", "category": "dx_probe", "severity": "debug", "message": "__dx_probe__", "metadata": {"silent": True}}},
+    {"agent": "mma-os-bridge",        "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge",        "key_env": "MMA_OS_BRIDGE_API_KEY",  "body": {"verb": "health"}, "treat_unknown_verb_as_healthy": True},
     {"agent": "n8n-writer",           "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/n8n-writer",           "key_env": "N8N_WRITER_API_KEY",     "body": {"verb": "health"}},
     {"agent": "notion-writer",        "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/notion-writer",        "key_env": "NOTION_WRITER_API_KEY",  "body": {"verb": "health"}},
     {"agent": "edge-function-writer", "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/edge-function-writer", "key_env": "EDGE_FN_WRITER_API_KEY", "body": {"verb": "health"}},
@@ -51,22 +49,33 @@ def _post(url, body, bearer, timeout=10.0):
 
 def _supabase_upsert(table, payload, on_conflict):
     if not SUPABASE_SERVICE_ROLE_KEY:
-        return {"ok": False, "error": "SUPABASE_SERVICE_ROLE_KEY not set"}
+        return {"ok": False}
     try:
         with httpx.Client(timeout=10.0) as client:
             resp = client.post(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation,resolution=merge-duplicates"}, json=payload)
-            data = resp.json() if resp.text else {}
-            if resp.status_code >= 300:
-                return {"ok": False, "status": resp.status_code, "error": data}
-            return {"ok": True, "row": data}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+            return {"ok": resp.status_code < 300}
+    except Exception:
+        return {"ok": False}
 
 def _bridge_alert(message, severity="warning", metadata=None):
     return _post(f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge", {"verb": "push_admin_notification", "category": "comms_dx", "severity": severity, "message": message, "metadata": metadata or {}}, MMA_OS_BRIDGE_API_KEY, timeout=10.0)
 
 def _key_for(env_name):
     return os.environ.get(env_name, "")
+
+def _is_healthy(res, treat_unknown_verb_as_healthy=False):
+    if res["status"] != 200:
+        return False
+    body = res["body"] if isinstance(res["body"], dict) else {}
+    # Standard healthy signals
+    if body.get("ok") is True or body.get("n8n_reachable") is True or body.get("mgmt_reachable") is True or body.get("langgraph_reachable") is True or body.get("integration") is not None:
+        return True
+    # v3: function is alive but doesn't know the verb -> still healthy
+    if treat_unknown_verb_as_healthy:
+        err = (body.get("error") or "").lower()
+        if "unknown verb" in err or "verb" in err:
+            return True
+    return False
 
 def run_health_checks(state):
     results = []
@@ -76,14 +85,7 @@ def run_health_checks(state):
             results.append({"agent": check["agent"], "domain": check["domain"], "tier": check["tier"], "status": "down", "reason": f"writer key {check['key_env']} not configured", "raw": {}})
             continue
         res = _post(check["url"], check["body"], key, timeout=10.0)
-        status_code = res["status"]
-        body = res["body"]
-        is_ok = status_code == 200 and (body.get("ok") is True or body.get("n8n_reachable") is True or body.get("mgmt_reachable") is True or body.get("langgraph_reachable") is True or body.get("integration") is not None)
-        if not is_ok and "fallback_body" in check:
-            res2 = _post(check["url"], check["fallback_body"], key, timeout=10.0)
-            if res2["status"] == 200 and (res2["body"].get("ok") is not False):
-                is_ok = True
-                res = res2
+        is_ok = _is_healthy(res, check.get("treat_unknown_verb_as_healthy", False))
         results.append({"agent": check["agent"], "domain": check["domain"], "tier": check["tier"], "status": "healthy" if is_ok else "down", "raw": res})
     return {**state, "check_results": results, "failures": [r for r in results if r["status"] != "healthy"]}
 
@@ -99,8 +101,8 @@ def attempt_self_heal(state):
             continue
         time.sleep(2)
         retry = _post(match["url"], match["body"], key, timeout=10.0)
-        retry_ok = retry["status"] == 200 and (retry["body"].get("ok") is True or retry["body"].get("n8n_reachable") is True)
-        heal_attempts.append({"agent": failure["agent"], "method": "retry", "result": "healed" if retry_ok else "still_failing", "raw": retry})
+        retry_ok = _is_healthy(retry, match.get("treat_unknown_verb_as_healthy", False))
+        heal_attempts.append({"agent": failure["agent"], "method": "retry", "result": "healed" if retry_ok else "still_failing"})
         if retry_ok:
             for r in state.get("check_results", []):
                 if r["agent"] == failure["agent"]:
@@ -124,7 +126,7 @@ def escalate_if_failing(state):
     if not failures:
         return {**state, "escalations": []}
     bullets = "\n".join([f"- {f['agent']} -> {f['status']}" for f in failures])
-    msg = f"Comms-DX: {len(failures)} specialist(s) unhealthy after retry:\n{bullets}"
+    msg = f"Comms-DX v3: {len(failures)} specialist(s) unhealthy:\n{bullets}"
     res = _bridge_alert(msg, severity="warning", metadata={"failures": failures, "heal_attempts": state.get("heal_attempts", [])})
     escalations.append({"channel": "telegram_admin", "result": res})
     return {**state, "escalations": escalations}
@@ -136,13 +138,13 @@ def summarize(state):
     healed = sum(1 for a in (state.get("heal_attempts", []) or []) if a["result"] == "healed")
     escalated = len(state.get("escalations", []) or [])
     if total == 0:
-        summary = "Comms-DX: no checks ran"
+        summary = "Comms-DX v3: no checks ran"
     elif healthy == total:
-        summary = f"Comms-DX v2: {healthy}/{total} healthy"
+        summary = f"Comms-DX v3: {healthy}/{total} healthy"
         if healed:
             summary += f" ({healed} self-healed)"
     else:
-        summary = f"Comms-DX v2: {healthy}/{total} healthy, {escalated} escalation(s) sent"
+        summary = f"Comms-DX v3: {healthy}/{total} healthy, {escalated} escalation(s) sent"
     return {**state, "summary": summary}
 
 def build_graph():
