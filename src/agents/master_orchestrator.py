@@ -1,10 +1,10 @@
 """
-Master Orchestrator — LangGraph v1
-
-Doctrine §88 (The Brain Doesn't Act, It Delegates) — Tier 0 of the swarm.
-The Master Orchestrator receives requests from any source (Telegram, cron, API,
-n8n workflow) and routes them to the correct Domain Orchestrator (Tier 1).
-It NEVER does work itself; it only resolves intent and dispatches.
+Master Orchestrator — LangGraph v2 (LLM resilience + URL collision fix)
+v2 fixes:
+  - LLM call returns empty content -> fall back to heuristic instead of erroring
+  - LLM call bumped timeout 20s -> 30s
+  - API error response surfaced in reasoning for debugging
+  - Switched SUPABASE_URL -> MMA_OS_SUPABASE_URL to avoid env collision
 """
 from __future__ import annotations
 import os, json, time
@@ -12,9 +12,10 @@ from typing import TypedDict, Optional
 import httpx
 from langgraph.graph import StateGraph, START, END
 
-MMA_OS_BRIDGE_URL = os.environ.get("MMA_OS_BRIDGE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co/functions/v1/mma-os-bridge")
-LANGGRAPH_BRIDGE_URL = os.environ.get("LANGGRAPH_BRIDGE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co/functions/v1/langgraph-bridge")
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co")
+MMA_OS_FUNCTIONS_BASE = os.environ.get("MMA_OS_FUNCTIONS_BASE", "https://slcqeiqcrhepicqxqjng.supabase.co/functions/v1")
+MMA_OS_SUPABASE_URL = os.environ.get("MMA_OS_SUPABASE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co")
+MMA_OS_BRIDGE_URL = f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge"
+LANGGRAPH_BRIDGE_URL = f"{MMA_OS_FUNCTIONS_BASE}/langgraph-bridge"
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 MMA_OS_BRIDGE_API_KEY = os.environ.get("MMA_OS_BRIDGE_API_KEY", "")
 LANGGRAPH_WRITER_API_KEY = os.environ.get("LANGGRAPH_WRITER_API_KEY", "")
@@ -65,7 +66,7 @@ def _supabase_insert(table, payload):
         return {"ok": False, "error": "SUPABASE_SERVICE_ROLE_KEY not set"}
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.post(f"{SUPABASE_URL}/rest/v1/{table}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}, json=payload)
+            resp = client.post(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}, json=payload)
             data = resp.json()
             if resp.status_code >= 300:
                 return {"ok": False, "status": resp.status_code, "error": data}
@@ -78,39 +79,70 @@ def _supabase_patch(table, pk_field, pk_value, payload):
         return {"ok": False, "error": "SUPABASE_SERVICE_ROLE_KEY not set"}
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.patch(f"{SUPABASE_URL}/rest/v1/{table}?{pk_field}=eq.{pk_value}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}, json=payload)
+            resp = client.patch(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?{pk_field}=eq.{pk_value}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}, json=payload)
             return {"ok": resp.status_code < 300, "status": resp.status_code}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
+def _heuristic_intent(text):
+    """Keyword-based fallback when LLM is unavailable or returns empty."""
+    lower = text.lower()
+    if any(k in lower for k in ("telegram", "alert", "notify", "send", "email", "sms", "message", "tell", "ping", "alive")):
+        return {"domain": "comms", "action": "notify_admin", "payload": {"message": text}, "confidence": 0.5, "reasoning": "heuristic match"}
+    if any(k in lower for k in ("tag", "ghl", "contact", "lead", "opportunity")):
+        return {"domain": "crm", "action": "unknown", "payload": {"raw": text}, "confidence": 0.4, "reasoning": "heuristic crm match"}
+    if any(k in lower for k in ("campaign", "enroll", "fire", "send to cohort", "skool")):
+        return {"domain": "revenue", "action": "unknown", "payload": {"raw": text}, "confidence": 0.4, "reasoning": "heuristic revenue match"}
+    return {"domain": "unknown", "action": "unknown", "payload": {}, "confidence": 0.0, "reasoning": "heuristic miss"}
+
 def _claude_resolve_intent(text, source, context, hint):
     if not ANTHROPIC_API_KEY:
-        lower = text.lower()
-        if any(k in lower for k in ("telegram", "alert", "notify", "send", "email", "sms", "message")):
-            return {"domain": "comms", "action": "notify_admin", "payload": {"message": text}, "confidence": 0.5, "reasoning": "heuristic fallback (no LLM)"}
-        return {"domain": "unknown", "action": "unknown", "payload": {}, "confidence": 0.0, "reasoning": "no LLM, heuristic miss"}
+        h = _heuristic_intent(text)
+        h["reasoning"] = "no Anthropic key, " + h["reasoning"]
+        return h
 
     system_prompt = (
         "You are the Master Orchestrator of MMA OS. Classify the request into a domain and action.\n"
         "Domains: comms, crm, lifecycle, revenue, monitoring, content, support, unknown.\n"
-        "Return ONLY JSON: { \"domain\": str, \"action\": str, \"payload\": dict, \"confidence\": 0..1, \"reasoning\": str }"
+        'Return ONLY JSON: { "domain": str, "action": str, "payload": dict, "confidence": 0..1, "reasoning": str }'
     )
     hint_str = f"\nHint: {hint}" if hint else ""
     user_msg = f"Source: {source}\nContext: {json.dumps(context)[:500]}{hint_str}\n\nRequest:\n{text}"
 
     try:
-        with httpx.Client(timeout=20.0) as client:
+        with httpx.Client(timeout=30.0) as client:
             resp = client.post("https://api.anthropic.com/v1/messages", headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}, json={"model": ANTHROPIC_MODEL, "max_tokens": 800, "system": system_prompt, "messages": [{"role": "user", "content": user_msg}]})
-            data = resp.json()
+            http_status = resp.status_code
+            try:
+                data = resp.json()
+            except Exception:
+                # Non-JSON response (rare). Fall back to heuristic.
+                h = _heuristic_intent(text)
+                h["reasoning"] = f"LLM non-json (http {http_status}); " + h["reasoning"]
+                return h
             content_blocks = data.get("content", [])
             raw = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text").strip()
-            if raw.startswith("```"):
+            if not raw:
+                # Empty content — likely API error. Fall back to heuristic.
+                api_error = data.get("error", {}).get("message", "no error msg")[:200] if isinstance(data.get("error"), dict) else str(data)[:200]
+                h = _heuristic_intent(text)
+                h["reasoning"] = f"LLM empty (http {http_status}, api_err: {api_error}); " + h["reasoning"]
+                return h
+            if raw.startswith("\u0060\u0060\u0060"):
                 raw = raw.split("\n", 1)[-1]
-            if raw.endswith("```"):
-                raw = raw.rsplit("```", 1)[0]
-            return json.loads(raw)
+            if raw.endswith("\u0060\u0060\u0060"):
+                raw = raw.rsplit("\u0060\u0060\u0060", 1)[0]
+            try:
+                return json.loads(raw)
+            except Exception:
+                # LLM returned text but not valid JSON. Fall back to heuristic.
+                h = _heuristic_intent(text)
+                h["reasoning"] = f"LLM unparseable: {raw[:100]}; " + h["reasoning"]
+                return h
     except Exception as exc:
-        return {"domain": "unknown", "action": "unknown", "payload": {}, "confidence": 0.0, "reasoning": f"LLM error: {exc}"}
+        h = _heuristic_intent(text)
+        h["reasoning"] = f"LLM exception: {exc}; " + h["reasoning"]
+        return h
 
 def resolve_intent(state):
     state = {**state, "error": None, "dispatch_started_at": time.time()}
@@ -172,13 +204,13 @@ def summarize(state):
     if state.get("error"):
         summary = f"Master ERROR: {state['error']}"
     elif intent.get("domain") == "unknown":
-        summary = f"Master: unknown intent (conf {intent.get('confidence', 0)})"
+        summary = f"Master v2: unknown (conf {intent.get('confidence', 0)}) -- {intent.get('reasoning', 'n/a')[:120]}"
     elif result.get("stub"):
-        summary = f"Master -> {intent.get('domain')} (stub): {result.get('note')}"
+        summary = f"Master v2 -> {intent.get('domain')} (stub): {result.get('note')}"
     elif result.get("ok"):
-        summary = f"Master -> {intent.get('domain')}.{intent.get('action')} OK"
+        summary = f"Master v2 -> {intent.get('domain')}.{intent.get('action')} OK (conf {intent.get('confidence', 0)})"
     else:
-        summary = f"Master -> {intent.get('domain')}.{intent.get('action')} FAILED: {result.get('error', 'unknown')}"
+        summary = f"Master v2 -> {intent.get('domain')}.{intent.get('action')} FAILED: {result.get('error', 'unknown')}"
     return {**state, "summary": summary}
 
 def build_graph():
