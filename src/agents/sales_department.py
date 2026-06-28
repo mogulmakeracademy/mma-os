@@ -1,8 +1,8 @@
 """
-Sales Department v2 — LangGraph (Tier -1)
+Sales Department v2 â LangGraph (Tier -1)
 Department Head composing crm + revenue + comms for BUILD-to-FUND sales operations.
 
-Doctrine §99 (BTF Canon) compliance — owns the BTF sales motion end-to-end.
+Doctrine Â§99 (BTF Canon) compliance â owns the BTF sales motion end-to-end.
 
 BTF-specific tasks (Stream #2):
   - log_btf_close          Record a new closed BTF deal -> btf_deals table + notify
@@ -17,7 +17,7 @@ Existing tasks:
   - handle_new_lead        composite: crm.upsert + tag + notify
   - escalate_hot_lead
 
-Doctrine §97 compliance: no backslashes in f-string expressions. DOLLAR pattern for currency.
+Doctrine Â§97 compliance: no backslashes in f-string expressions. DOLLAR pattern for currency.
 """
 from __future__ import annotations
 import os, time
@@ -40,7 +40,7 @@ LANGGRAPH_BRIDGE_URL = MMA_OS_FUNCTIONS_BASE + "/langgraph-bridge"
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 LANGGRAPH_WRITER_API_KEY = os.environ.get("LANGGRAPH_WRITER_API_KEY", "")
 
-# BTF phase progression rules per Doctrine §99
+# BTF phase progression rules per Doctrine Â§99
 BTF_PHASES = ["pre_build", "build", "stack", "fund", "funded"]
 BTF_PHASE_NEXT = {"pre_build": "build", "build": "stack", "stack": "fund", "fund": "funded", "funded": "funded"}
 
@@ -109,6 +109,18 @@ def _sb_patch(table, pk_field, pk_value, payload, prefer_return=False):
             return {"ok": r.status_code < 300, "status": r.status_code}
     except Exception: return {"ok": False}
 
+def _log_touchpoint(btf_deal_id, layer, touchpoint_type, direction="outbound", metadata=None):
+    """Doctrine §103: log every customer touchpoint to btf_touchpoints audit table."""
+    if not btf_deal_id: return {"ok": False, "skip_reason": "no_deal_id"}
+    payload = {
+        "btf_deal_id": btf_deal_id,
+        "layer": layer,
+        "touchpoint_type": touchpoint_type,
+        "direction": direction,
+        "metadata": metadata or {}
+    }
+    return _sb_insert("btf_touchpoints", payload, prefer_return=False)
+
 def start(state):
     state = {**state, "error": None, "call_started_at": time.time()}
     task = (state.get("task") or "daily_sales_brief").strip().lower()
@@ -121,7 +133,8 @@ def start(state):
         "log_btf_close": ["btf_close", "close_btf", "new_btf_deal"],
         "get_btf_pipeline": ["btf_pipeline", "btf_deals", "btf_status"],
         "advance_btf_phase": ["btf_advance", "next_phase", "phase_up"],
-        "record_btf_payment": ["btf_payment", "record_payment", "payment_installment"]
+        "record_btf_payment": ["btf_payment", "record_payment", "payment_installment"],
+        "send_workspace_invite": ["invite_workspace", "send_btf_invite", "btf_invite"]
     }
     canonical = task
     for canon, alist in aliases.items():
@@ -279,6 +292,7 @@ def handle_specific(state):
         row = res.get("row", {})
         msg = "[" + ICON_BTF + "] NEW BTF CLOSE: " + (deal.get("full_legal_name") or email) + " | " + deal.get("payment_plan", "?") + " | source: " + deal.get("source", "?")
         notify = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {"message": msg, "category": "BTF Close", "severity": "success"}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "log_btf_close"}, wait=True, timeout_ms=15000)
+        _log_touchpoint(row.get("id") if isinstance(row, dict) else None, "telegram", "new_close", metadata={"payment_plan": deal.get("payment_plan"), "source": deal.get("source")})
         return {**state, "btf_deal_result": res, "comms_result": notify}
     if task == "advance_btf_phase":
         deal_id = payload.get("deal_id") or payload.get("id")
@@ -295,6 +309,7 @@ def handle_specific(state):
         name = cur.get("full_legal_name") or cur.get("contact_email", "?")
         msg = "[" + ICON_BTF + "] PHASE ADVANCE: " + name + " moved " + cur_phase + " -> " + next_phase
         notify = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {"message": msg, "category": "BTF Phase", "severity": "success"}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "advance_btf_phase"}, wait=True, timeout_ms=15000)
+        _log_touchpoint(deal_id, "telegram", "phase_advance", metadata={"old_phase": cur_phase, "new_phase": next_phase})
         return {**state, "btf_deal_result": patch_res, "comms_result": notify}
     if task == "record_btf_payment":
         deal_id = payload.get("deal_id") or payload.get("id")
@@ -313,7 +328,26 @@ def handle_specific(state):
         remaining = max(0, total - new_collected)
         msg = "[" + ICON_MONEY + "] BTF PAYMENT: " + name + " +" + DOLLAR + str(amount_cents // 100) + " | collected " + DOLLAR + str(new_collected // 100) + "/" + DOLLAR + str(total // 100) + " | remaining " + DOLLAR + str(remaining // 100)
         notify = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {"message": msg, "category": "BTF Payment", "severity": "success"}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "record_btf_payment"}, wait=True, timeout_ms=15000)
+        _log_touchpoint(deal_id, "telegram", "payment_received", metadata={"amount_cents": amount_cents, "collected_total_cents": new_collected})
         return {**state, "btf_deal_result": patch_res, "comms_result": notify}
+    if task == "send_workspace_invite":
+        deal_id = payload.get("deal_id") or payload.get("id")
+        if not deal_id: return {**state, "error": "deal_id required"}
+        cur_res = _sb_get("btf_deals?id=eq." + deal_id + "&select=contact_email,full_legal_name,preferred_name,paige_client_id")
+        if not cur_res["body"]: return {**state, "error": "deal not found"}
+        cur = cur_res["body"][0]
+        email = cur.get("contact_email")
+        name = cur.get("preferred_name") or cur.get("full_legal_name") or "Client"
+        # Paige invite endpoint (set via env var when Paige ships Day 3)
+        paige_invite_url = os.environ.get("PAIGE_BTF_INVITE_URL", "")
+        invite_result = {"ok": False, "skip_reason": "PAIGE_BTF_INVITE_URL not configured (Paige Day 3 pending)"}
+        if paige_invite_url:
+            invite_result = _post(paige_invite_url, {"contact_email": email, "full_name": cur.get("full_legal_name"), "preferred_name": cur.get("preferred_name"), "btf_deal_id": deal_id, "paige_client_id": cur.get("paige_client_id")}, os.environ.get("PAIGE_BTF_INVITE_KEY", ""), timeout=20.0)
+        # Notify Antonio
+        notify_msg = "[" + ICON_BTF + "] WORKSPACE INVITE: " + name + " (" + email + ") | status: " + ("sent" if invite_result.get("ok") else "STUB " + str(invite_result.get("skip_reason", "error")))
+        notify = _langgraph_fire("comms_orchestrator", {"task": "send_telegram", "payload": {"message": notify_msg, "category": "BTF Invite", "severity": "info" if invite_result.get("ok") else "warning"}, "parent_dispatch_id": state.get("parent_dispatch_id"), "source": "send_workspace_invite"}, wait=True, timeout_ms=15000)
+        _log_touchpoint(deal_id, "email", "workspace_invite", metadata={"recipient": email, "invite_status": invite_result.get("ok", False), "endpoint_configured": bool(paige_invite_url)})
+        return {**state, "btf_deal_result": invite_result, "comms_result": notify}
     return state
 
 def log_complete(state):
@@ -342,6 +376,9 @@ def summarize(state):
         return {**state, "summary": "Sales." + task + ": phase advanced | telegram [" + delivered + "]"}
     if task == "record_btf_payment":
         return {**state, "summary": "Sales." + task + ": payment recorded | telegram [" + delivered + "]"}
+    if task == "send_workspace_invite":
+        ir = state.get("btf_deal_result", {}) or {}
+        return {**state, "summary": "Sales." + task + ": invite " + ("SENT" if ir.get("ok") else "STUB") + " | telegram [" + delivered + "]"}
     if task in ("handle_new_lead", "escalate_hot_lead"):
         steps_n = len(state.get("composite_steps", []) or [])
         return {**state, "summary": "Sales." + task + ": " + str(steps_n) + " steps | telegram [" + delivered + "]"}
