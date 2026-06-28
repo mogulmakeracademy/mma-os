@@ -12,7 +12,13 @@
     "crm_orchestrator": "./src/agents/crm_orchestrator.py:graph",
     "crm_dx": "./src/agents/crm_dx.py:graph",
     "monitoring_orchestrator": "./src/agents/monitoring_orchestrator.py:graph",
-    "monitoring_dx": "./src/agents/monitoring_dx.py:graph"
+    "monitoring_dx": "./src/agents/monitoring_dx.py:graph",
+    "lifecycle_orchestrator": "./src/agents/lifecycle_orchestrator.py:graph",
+    "lifecycle_dx": "./src/agents/lifecycle_dx.py:graph",
+    "content_orchestrator": "./src/agents/content_orchestrator.py:graph",
+    "content_dx": "./src/agents/content_dx.py:graph",
+    "support_orchestrator": "./src/agents/support_orchestrator.py:graph",
+    "support_dx": "./src/agents/support_dx.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
