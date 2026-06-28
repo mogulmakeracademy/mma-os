@@ -10,7 +10,9 @@
     "revenue_orchestrator": "./src/agents/revenue_orchestrator.py:graph",
     "revenue_dx": "./src/agents/revenue_dx.py:graph",
     "crm_orchestrator": "./src/agents/crm_orchestrator.py:graph",
-    "crm_dx": "./src/agents/crm_dx.py:graph"
+    "crm_dx": "./src/agents/crm_dx.py:graph",
+    "monitoring_orchestrator": "./src/agents/monitoring_orchestrator.py:graph",
+    "monitoring_dx": "./src/agents/monitoring_dx.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
