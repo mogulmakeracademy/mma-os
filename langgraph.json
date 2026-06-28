@@ -19,7 +19,8 @@
     "content_dx": "./src/agents/content_dx.py:graph",
     "support_orchestrator": "./src/agents/support_orchestrator.py:graph",
     "support_dx": "./src/agents/support_dx.py:graph",
-    "operations_department": "./src/agents/operations_department.py:graph"
+    "operations_department": "./src/agents/operations_department.py:graph",
+    "customer_success_department": "./src/agents/customer_success_department.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
