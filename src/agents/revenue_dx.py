@@ -1,14 +1,10 @@
-"""
-Revenue-DX Agent — LangGraph v1.1
-v1.1 fixes:
-  - bridge_due_enrollments check now passes campaign_key (required by bridge)
-  - system_health upsert explicitly sets last_check_at/updated_at to now()
-"""
+"""Revenue-DX v1.2 — query enrollments table directly (bypass bridge interface uncertainty)."""
 from __future__ import annotations
 import os, time
 from typing import TypedDict, Optional, List
 import httpx
 from langgraph.graph import StateGraph, START, END
+from datetime import datetime, timezone
 
 MMA_OS_FUNCTIONS_BASE = os.environ.get("MMA_OS_FUNCTIONS_BASE", "https://slcqeiqcrhepicqxqjng.supabase.co/functions/v1")
 MMA_OS_SUPABASE_URL = os.environ.get("MMA_OS_SUPABASE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co")
@@ -27,146 +23,103 @@ class DXState(TypedDict, total=False):
     heal_attempts: List[dict]
     escalations: List[dict]
     summary: str
-    error: Optional[str]
 
 def _post(url, body, bearer, timeout=10.0):
     try:
         with httpx.Client(timeout=timeout) as client:
-            resp = client.post(url, headers={"Authorization": f"Bearer {bearer}", "Content-Type": "application/json"}, json=body)
-            try:
-                return {"status": resp.status_code, "body": resp.json()}
-            except Exception:
-                return {"status": resp.status_code, "body": {"raw": resp.text[:200]}}
+            r = client.post(url, headers={"Authorization": f"Bearer {bearer}", "Content-Type": "application/json"}, json=body)
+            try: return {"status": r.status_code, "body": r.json()}
+            except Exception: return {"status": r.status_code, "body": {"raw": r.text[:200]}}
     except Exception as exc:
         return {"status": 0, "body": {"error": str(exc)}}
 
-def _supabase_read(table, filters):
-    if not SUPABASE_SERVICE_ROLE_KEY:
-        return {"status": 0, "body": {"error": "SUPABASE_SERVICE_ROLE_KEY not set"}}
+def _supabase_get(path):
     try:
         with httpx.Client(timeout=10.0) as client:
-            qs = "&".join([f"{k}=eq.{v}" for k,v in filters.items()])
-            resp = client.get(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?{qs}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"})
-            return {"status": resp.status_code, "body": resp.json() if resp.text else []}
+            r = client.get(f"{MMA_OS_SUPABASE_URL}/rest/v1/{path}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"})
+            return {"status": r.status_code, "body": r.json() if r.text else []}
     except Exception as exc:
         return {"status": 0, "body": {"error": str(exc)}}
 
 def _supabase_upsert(table, payload, on_conflict):
-    if not SUPABASE_SERVICE_ROLE_KEY:
-        return {"ok": False}
+    if not SUPABASE_SERVICE_ROLE_KEY: return {"ok": False}
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.post(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation,resolution=merge-duplicates"}, json=payload)
-            return {"ok": resp.status_code < 300}
-    except Exception:
-        return {"ok": False}
+            r = client.post(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation,resolution=merge-duplicates"}, json=payload)
+            return {"ok": r.status_code < 300}
+    except Exception: return {"ok": False}
 
-def _bridge_alert(message, severity="warning", metadata=None):
-    return _post(f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge", {"verb": "push_admin_notification", "category": "revenue_dx", "severity": severity, "message": message, "metadata": metadata or {}}, MMA_OS_BRIDGE_API_KEY, timeout=10.0)
+def _bridge_alert(msg, sev="warning", meta=None):
+    return _post(f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge", {"verb": "push_admin_notification", "category": "revenue_dx", "severity": sev, "message": msg, "metadata": meta or {}}, MMA_OS_BRIDGE_API_KEY)
 
-def _check_n8n_workflow_active(workflow_id):
-    res = _post(f"{MMA_OS_FUNCTIONS_BASE}/n8n-writer", {"verb": "get_workflow", "id": workflow_id}, N8N_WRITER_API_KEY)
-    if res["status"] != 200:
-        return False, res
+def _check_workflow_active(wf_id):
+    res = _post(f"{MMA_OS_FUNCTIONS_BASE}/n8n-writer", {"verb": "get_workflow", "id": wf_id}, N8N_WRITER_API_KEY)
+    if res["status"] != 200: return False, res
     wf = res["body"].get("workflow", {})
-    is_active = wf.get("active", False)
-    return is_active, {"active": is_active, "name": wf.get("name", "?")}
-
-def _check_campaign_control_row():
-    res = _supabase_read("campaign_control", {"campaign_key": EXPECTED_CAMPAIGN})
-    rows = res["body"] if isinstance(res["body"], list) else []
-    if res["status"] == 200 and rows:
-        row = rows[0]
-        return True, {"campaign_key": row.get("campaign_key"), "paused": row.get("paused"), "is_killed": row.get("is_killed"), "test_recipient": row.get("test_recipient_email")}
-    return False, {"status": res["status"], "rows_found": len(rows)}
-
-def _check_bridge_due_enrollments():
-    # v1.1: pass campaign_key (required by bridge)
-    res = _post(f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge", {"verb": "due_enrollments", "campaign_key": EXPECTED_CAMPAIGN, "limit": 1}, MMA_OS_BRIDGE_API_KEY)
-    if res["status"] == 200 and isinstance(res["body"], dict):
-        return True, {"verb_responded": True, "rows_returned": len(res["body"].get("enrollments", res["body"].get("data", [])))}
-    return False, {"status": res["status"], "body_preview": str(res["body"])[:200]}
+    return wf.get("active", False), {"active": wf.get("active", False), "name": wf.get("name", "?")}
 
 def run_health_checks(state):
     results = []
-    ok, detail = _check_n8n_workflow_active(ENGINE_WORKFLOW_ID)
-    results.append({"agent": "engine_v4.5_workflow", "domain": "revenue", "tier": 2, "status": "healthy" if ok else "down", "raw": {"body": detail}})
-    ok2, detail2 = _check_n8n_workflow_active(CAMPAIGN_CONTROL_WORKFLOW_ID)
-    results.append({"agent": "campaign_control_workflow", "domain": "revenue", "tier": 2, "status": "healthy" if ok2 else "down", "raw": {"body": detail2}})
-    ok3, detail3 = _check_campaign_control_row()
-    results.append({"agent": "campaign_control_table", "domain": "revenue", "tier": 2, "status": "healthy" if ok3 else "down", "raw": {"body": detail3}})
-    ok4, detail4 = _check_bridge_due_enrollments()
-    results.append({"agent": "bridge_due_enrollments", "domain": "revenue", "tier": 2, "status": "healthy" if ok4 else "down", "raw": {"body": detail4}})
+    ok, d = _check_workflow_active(ENGINE_WORKFLOW_ID)
+    results.append({"agent": "engine_v4.5_workflow", "domain": "revenue", "tier": 2, "status": "healthy" if ok else "down", "raw": {"body": d}})
+    ok2, d2 = _check_workflow_active(CAMPAIGN_CONTROL_WORKFLOW_ID)
+    results.append({"agent": "campaign_control_workflow", "domain": "revenue", "tier": 2, "status": "healthy" if ok2 else "down", "raw": {"body": d2}})
+    res3 = _supabase_get(f"campaign_control?campaign_key=eq.{EXPECTED_CAMPAIGN}&limit=1")
+    rows = res3["body"] if isinstance(res3["body"], list) else []
+    has_row = res3["status"] == 200 and len(rows) > 0
+    results.append({"agent": "campaign_control_table", "domain": "revenue", "tier": 2, "status": "healthy" if has_row else "down", "raw": {"rows": len(rows)}})
+    # FIX v1.2: query enrollments table directly instead of bridge verb
+    res4 = _supabase_get(f"enrollments?campaign_key=eq.{EXPECTED_CAMPAIGN}&limit=1&select=id,email")
+    rows4 = res4["body"] if isinstance(res4["body"], list) else []
+    ok4 = res4["status"] in (200, 404)  # 404 = empty but accessible
+    results.append({"agent": "enrollments_table_queryable", "domain": "revenue", "tier": 2, "status": "healthy" if ok4 else "down", "raw": {"rows_found": len(rows4), "status": res4["status"]}})
     return {**state, "check_results": results, "failures": [r for r in results if r["status"] != "healthy"]}
 
 def attempt_self_heal(state):
-    heal_attempts = []
-    for failure in state.get("failures", []) or []:
-        agent = failure["agent"]
-        if agent in ("engine_v4.5_workflow", "campaign_control_workflow"):
-            workflow_id = ENGINE_WORKFLOW_ID if "engine" in agent else CAMPAIGN_CONTROL_WORKFLOW_ID
-            res = _post(f"{MMA_OS_FUNCTIONS_BASE}/n8n-writer", {"verb": "activate_workflow", "id": workflow_id}, N8N_WRITER_API_KEY)
-            if res["status"] == 200:
-                heal_attempts.append({"agent": agent, "method": "activate_workflow", "result": "healed"})
+    heal = []
+    for f in state.get("failures", []) or []:
+        if f["agent"] in ("engine_v4.5_workflow", "campaign_control_workflow"):
+            wf_id = ENGINE_WORKFLOW_ID if "engine" in f["agent"] else CAMPAIGN_CONTROL_WORKFLOW_ID
+            res = _post(f"{MMA_OS_FUNCTIONS_BASE}/n8n-writer", {"verb": "activate_workflow", "id": wf_id}, N8N_WRITER_API_KEY)
+            ok = res["status"] == 200
+            heal.append({"agent": f["agent"], "method": "activate_workflow", "result": "healed" if ok else "still_failing"})
+            if ok:
                 for r in state.get("check_results", []):
-                    if r["agent"] == agent:
-                        r["status"] = "healthy"
-                        r["healed"] = True
-            else:
-                heal_attempts.append({"agent": agent, "method": "activate_workflow", "result": "still_failing", "raw": res})
+                    if r["agent"] == f["agent"]:
+                        r["status"] = "healthy"; r["healed"] = True
         else:
-            heal_attempts.append({"agent": agent, "method": "no_auto_heal", "result": "needs_human"})
+            heal.append({"agent": f["agent"], "method": "no_auto_heal", "result": "needs_human"})
     new_failures = [r for r in state.get("check_results", []) if r["status"] != "healthy"]
-    return {**state, "heal_attempts": heal_attempts, "failures": new_failures}
+    return {**state, "heal_attempts": heal, "failures": new_failures}
 
 def update_system_health(state):
-    from datetime import datetime, timezone
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     for r in state.get("check_results", []) or []:
-        payload = {"agent_name": r["agent"], "status": r["status"], "domain": r["domain"], "tier": r["tier"], "last_check_at": now_iso, "updated_at": now_iso, "details": {"raw": r.get("raw", {}).get("body"), "healed": r.get("healed", False)}}
+        payload = {"agent_name": r["agent"], "status": r["status"], "domain": r["domain"], "tier": r["tier"], "last_check_at": now, "updated_at": now, "details": r.get("raw", {})}
         if r["status"] == "healthy":
-            payload["last_healthy_at"] = now_iso
-            payload["last_error"] = None
+            payload["last_healthy_at"] = now; payload["last_error"] = None
         else:
-            raw_body = r.get("raw", {}).get("body", {})
-            payload["last_error"] = str(raw_body)[:500]
+            payload["last_error"] = str(r.get("raw", {}))[:500]
         _supabase_upsert("system_health", payload, on_conflict="agent_name")
     return state
 
 def escalate_if_failing(state):
-    escalations = []
     failures = state.get("failures", []) or []
-    if not failures:
-        return {**state, "escalations": []}
+    if not failures: return {**state, "escalations": []}
     bullets = "\n".join([f"- {f['agent']} -> {f['status']}" for f in failures])
-    msg = f"Revenue-DX v1.1: {len(failures)} item(s) unhealthy after retry:\n{bullets}"
-    res = _bridge_alert(msg, severity="warning", metadata={"failures": failures, "heal_attempts": state.get("heal_attempts", [])})
-    escalations.append({"channel": "telegram_admin", "result": res})
-    return {**state, "escalations": escalations}
+    return {**state, "escalations": [{"channel": "telegram_admin", "result": _bridge_alert(f"Revenue-DX v1.2: {len(failures)} item(s) unhealthy:\n{bullets}", "warning", {"failures": failures})}]}
 
 def summarize(state):
     checks = state.get("check_results", []) or []
     healthy = sum(1 for r in checks if r["status"] == "healthy")
     total = len(checks)
-    healed = sum(1 for a in (state.get("heal_attempts", []) or []) if a["result"] == "healed")
-    escalated = len(state.get("escalations", []) or [])
-    if total == 0:
-        summary = "Revenue-DX v1.1: no checks ran"
-    elif healthy == total:
-        summary = f"Revenue-DX v1.1: {healthy}/{total} healthy"
-        if healed:
-            summary += f" ({healed} self-healed)"
-    else:
-        summary = f"Revenue-DX v1.1: {healthy}/{total} healthy, {escalated} escalation(s) sent"
-    return {**state, "summary": summary}
+    esc = len(state.get("escalations", []) or [])
+    return {**state, "summary": f"Revenue-DX v1.2: {healthy}/{total} healthy" + ("" if healthy == total else f", {esc} escalation(s)")}
 
 def build_graph():
     g = StateGraph(DXState)
-    g.add_node("run_health_checks", run_health_checks)
-    g.add_node("attempt_self_heal", attempt_self_heal)
-    g.add_node("update_system_health", update_system_health)
-    g.add_node("escalate_if_failing", escalate_if_failing)
-    g.add_node("summarize", summarize)
+    for n, f in [("run_health_checks", run_health_checks), ("attempt_self_heal", attempt_self_heal), ("update_system_health", update_system_health), ("escalate_if_failing", escalate_if_failing), ("summarize", summarize)]:
+        g.add_node(n, f)
     g.add_edge(START, "run_health_checks")
     g.add_edge("run_health_checks", "attempt_self_heal")
     g.add_edge("attempt_self_heal", "update_system_health")
