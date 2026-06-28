@@ -1,11 +1,6 @@
 """
-Master Orchestrator — LangGraph v2.2
-v2.2 changes:
-  - DOMAIN_REGISTRY now routes comms, revenue, crm to their LIVE LangGraph agents
-    (instead of stubs). Only lifecycle/monitoring/content/support remain stubs.
-  - System prompt tightened: campaigns/Engine v4.5/cohort sends = REVENUE.
-    Tag badges on contacts = CRM. Enrollment moves between tiers = LIFECYCLE.
-  - All v2 LLM resilience + URL collision fixes preserved.
+Master Orchestrator — LangGraph v2.3
+v2.3: monitoring now routes to langgraph (was stub).
 """
 from __future__ import annotations
 import os, json, time
@@ -27,8 +22,8 @@ DOMAIN_REGISTRY = {
     "comms":      {"type": "langgraph", "graph_id": "comms_orchestrator"},
     "revenue":    {"type": "langgraph", "graph_id": "revenue_orchestrator"},
     "crm":        {"type": "langgraph", "graph_id": "crm_orchestrator"},
+    "monitoring": {"type": "langgraph", "graph_id": "monitoring_orchestrator"},
     "lifecycle":  {"type": "stub", "note": "lifecycle_orchestrator pending"},
-    "monitoring": {"type": "stub", "note": "monitoring_orchestrator pending"},
     "content":    {"type": "stub", "note": "content_orchestrator pending"},
     "support":    {"type": "n8n_webhook", "url": os.environ.get("CS_WEBHOOK_URL", "")},
 }
@@ -64,32 +59,33 @@ def _langgraph_fire(graph_id, input_data, wait=True, timeout_ms=60000):
 
 def _supabase_insert(table, payload):
     if not SUPABASE_SERVICE_ROLE_KEY:
-        return {"ok": False, "error": "SUPABASE_SERVICE_ROLE_KEY not set"}
+        return {"ok": False}
     try:
         with httpx.Client(timeout=10.0) as client:
             resp = client.post(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}, json=payload)
             data = resp.json()
             if resp.status_code >= 300:
-                return {"ok": False, "status": resp.status_code, "error": data}
+                return {"ok": False}
             return {"ok": True, "row": data[0] if isinstance(data, list) and data else data}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 def _supabase_patch(table, pk_field, pk_value, payload):
     if not SUPABASE_SERVICE_ROLE_KEY:
-        return {"ok": False, "error": "SUPABASE_SERVICE_ROLE_KEY not set"}
+        return {"ok": False}
     try:
         with httpx.Client(timeout=10.0) as client:
             resp = client.patch(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?{pk_field}=eq.{pk_value}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json"}, json=payload)
-            return {"ok": resp.status_code < 300, "status": resp.status_code}
+            return {"ok": resp.status_code < 300}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 def _heuristic_intent(text):
     lower = text.lower()
-    # Most specific first
     if any(k in lower for k in ("campaign", "engine v4", "cohort", "skool 45", "kill switch", "pause campaign", "fire campaign")):
         return {"domain": "revenue", "action": "unknown", "payload": {"raw": text}, "confidence": 0.5, "reasoning": "heuristic revenue match"}
+    if any(k in lower for k in ("system health", "health summary", "qc check", "audit", "drift", "recent alerts", "dispatches", "agent_calls")):
+        return {"domain": "monitoring", "action": "unknown", "payload": {"raw": text}, "confidence": 0.5, "reasoning": "heuristic monitoring match"}
     if any(k in lower for k in ("tag", "tier badge", "add note", "update contact", "ghl contact", "create contact", "search contact")):
         return {"domain": "crm", "action": "unknown", "payload": {"raw": text}, "confidence": 0.5, "reasoning": "heuristic crm match"}
     if any(k in lower for k in ("enrollment", "tier move", "upgrade to premium", "downgrade", "move from")):
@@ -103,25 +99,22 @@ def _claude_resolve_intent(text, source, context, hint):
         h = _heuristic_intent(text)
         h["reasoning"] = "no Anthropic key, " + h["reasoning"]
         return h
-
-    # v2.2: clearer domain boundaries (esp. revenue vs crm)
     system_prompt = (
         "You are the Master Orchestrator of MMA OS. Classify the request into a domain and action.\n\n"
-        "DOMAIN DEFINITIONS (read carefully — boundaries matter):\n"
+        "DOMAIN DEFINITIONS:\n"
         "- comms: Send/receive messages (Telegram, Email, SMS, admin alerts)\n"
         "- crm: GHL contact-level operations — tag badges, notes, contact fields, opportunities. NOT campaigns.\n"
-        "- lifecycle: Moving a contact between tiers (Standard->Premium, Premium->VIP), enrolling/unenrolling from campaigns, lifecycle stage changes.\n"
-        "- revenue: Campaign-level operations — fire/kill/pause campaigns, Engine v4.5 controls, cohort sends, pipeline management. ANYTHING about a 'campaign' (Skool 45-day, July 4th, etc.) goes here.\n"
-        "- monitoring: Quality checks, drift detection, system health audits, agent diagnostics\n"
+        "- lifecycle: Moving a contact between tiers, enrolling/unenrolling from campaigns, lifecycle stage changes.\n"
+        "- revenue: Campaign-level operations — fire/kill/pause campaigns, Engine v4.5 controls, cohort sends. ANY 'campaign' goes here.\n"
+        "- monitoring: System health checks, agent diagnostics, drift detection, recent dispatches/alerts, QC audits.\n"
         "- content: Editorial pipeline, Mogul Brief, Coffee Hour content production\n"
         "- support: Customer support tickets, /support commands, escalations\n"
         "- unknown: When intent is unclear or out of scope\n\n"
-        "Key disambiguation: 'Tag Tashia as VIP' = crm (tagging a contact). 'Run the Standard upgrade campaign' = revenue (firing a campaign). 'Move Tashia from Standard to Premium tier' = lifecycle (cross-tier movement).\n\n"
+        "Disambig: 'Tag Tashia as VIP' = crm. 'Run the Standard upgrade campaign' = revenue. 'Move Tashia from Standard to Premium' = lifecycle. 'Show me system health' = monitoring. 'Send Antonio a Telegram' = comms.\n\n"
         'Return ONLY JSON: { "domain": str, "action": str, "payload": dict, "confidence": 0..1, "reasoning": str }'
     )
     hint_str = f"\nHint: {hint}" if hint else ""
     user_msg = f"Source: {source}\nContext: {json.dumps(context)[:500]}{hint_str}\n\nRequest:\n{text}"
-
     try:
         with httpx.Client(timeout=30.0) as client:
             resp = client.post("https://api.anthropic.com/v1/messages", headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}, json={"model": ANTHROPIC_MODEL, "max_tokens": 800, "system": system_prompt, "messages": [{"role": "user", "content": user_msg}]})
@@ -214,13 +207,13 @@ def summarize(state):
     if state.get("error"):
         summary = f"Master ERROR: {state['error']}"
     elif intent.get("domain") == "unknown":
-        summary = f"Master v2.2: unknown (conf {intent.get('confidence', 0)}) -- {intent.get('reasoning', 'n/a')[:120]}"
+        summary = f"Master v2.3: unknown (conf {intent.get('confidence', 0)}) -- {intent.get('reasoning', 'n/a')[:120]}"
     elif result.get("stub"):
-        summary = f"Master v2.2 -> {intent.get('domain')} (stub): {result.get('note')}"
+        summary = f"Master v2.3 -> {intent.get('domain')} (stub): {result.get('note')}"
     elif result.get("ok"):
-        summary = f"Master v2.2 -> {intent.get('domain')}.{intent.get('action')} OK (conf {intent.get('confidence', 0)})"
+        summary = f"Master v2.3 -> {intent.get('domain')}.{intent.get('action')} OK (conf {intent.get('confidence', 0)})"
     else:
-        summary = f"Master v2.2 -> {intent.get('domain')}.{intent.get('action')} FAILED: {result.get('error', 'unknown')}"
+        summary = f"Master v2.3 -> {intent.get('domain')}.{intent.get('action')} FAILED: {result.get('error', 'unknown')}"
     return {**state, "summary": summary}
 
 def build_graph():
