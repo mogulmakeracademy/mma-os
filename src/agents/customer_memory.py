@@ -19,6 +19,15 @@ v2 (Jun 28, 2026):
     using the new Wave 2 verbs (get_opportunities_for_contact, get_coach_for_client)
     and merges them into the customer profile as structured facts. Skips silently
     if PAIGE_BRIDGE_API_KEY isn't set or the profile has no confirmed identity.
+
+v3 (Jun 28, 2026):
+  - Fixed stale-error bug visible in LangGraph Studio: when a thread had a
+    prior failed turn, the `error` field persisted in checkpoint and blocked
+    subsequent successful turns. resolve_identity now clears error at the top
+    of each run. extract_facts and capture_to_bridge now check identity status
+    as override — if identity is confirmed, the node proceeds even if a stale
+    error somehow lingered. Production (single-fire) impact: none. Studio
+    iteration impact: fixed.
 """
 
 from __future__ import annotations
@@ -54,18 +63,21 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20251022"
 
 
 class MemoryState(TypedDict, total=False):
-    mode: str
+    # Input
+    mode: str  # "capture" | "enrichment_sweep"
     name_hint: Optional[str]
     email: Optional[str]
     raw_text: Optional[str]
     source: str
     source_meta: dict
     captured_by: str
+    # Internal
     identity: dict
     extracted_facts: List[dict]
     structured: dict
     capture_result: dict
     paige_context: dict
+    # Output
     enrichment_summary: dict
     error: Optional[str]
 
@@ -74,6 +86,7 @@ class MemoryState(TypedDict, total=False):
 
 
 def _post(url: str, body: dict, bearer: str, timeout: float = 30.0) -> dict:
+    """POST to an Edge Function with a bearer token."""
     if not bearer:
         return {"ok": False, "error": "missing bearer token"}
     try:
@@ -95,14 +108,18 @@ def _post(url: str, body: dict, bearer: str, timeout: float = 30.0) -> dict:
 
 
 def _bridge_post(url: str, body: dict, timeout: float = 30.0) -> dict:
+    """POST to one of our Edge Functions using the MMA OS bridge key."""
     return _post(url, body, MMA_OS_BRIDGE_API_KEY, timeout)
 
 
 def _paige_post(body: dict, timeout: float = 30.0) -> dict:
+    """POST to Paige Bridge using the Paige bridge key."""
     return _post(PAIGE_BRIDGE_URL, body, PAIGE_BRIDGE_API_KEY, timeout)
 
 
 def _claude_extract_facts(raw_text: str, name_hint: Optional[str] = None) -> List[dict]:
+    """Use Claude to extract structured facts from raw text. Falls back to a
+    single-fact wrapper if Anthropic isn't configured."""
     if not ANTHROPIC_API_KEY or not raw_text:
         return [{"fact_text": raw_text[:500], "category": "raw"}]
 
@@ -151,6 +168,15 @@ def _claude_extract_facts(raw_text: str, name_hint: Optional[str] = None) -> Lis
 
 
 def resolve_identity(state: MemoryState) -> MemoryState:
+    """Doctrine §81 — confirm subject identity via GHL search before any write.
+
+    v3: Explicitly clear stale `error` from prior turns when this turn has valid
+    inputs. LangGraph thread checkpoints persist state across turns, which can
+    cause an earlier turn's error to block a later turn that has good inputs.
+    """
+    # v3 fix: clear any stale error from prior turns at the start of each fresh run
+    state = {**state, "error": None}
+
     if state.get("email"):
         return {**state, "identity": {"match_status": "confirmed", "suggested_email": state["email"]}}
 
@@ -165,7 +191,15 @@ def resolve_identity(state: MemoryState) -> MemoryState:
 
 
 def extract_facts(state: MemoryState) -> MemoryState:
-    if state.get("error"):
+    """Use Claude to pull structured facts out of raw_text.
+
+    v3: Check both error AND identity.match_status — if identity is confirmed,
+    proceed even if a stale error somehow lingered.
+    """
+    identity = state.get("identity", {})
+    identity_good = identity.get("match_status") in ("confirmed", "multiple_matches")
+
+    if state.get("error") and not identity_good:
         return state
     raw_text = state.get("raw_text", "")
     if not raw_text:
@@ -175,7 +209,15 @@ def extract_facts(state: MemoryState) -> MemoryState:
 
 
 def capture_to_bridge(state: MemoryState) -> MemoryState:
-    if state.get("error"):
+    """Push the extracted facts into customer_profiles via the bridge.
+
+    v3: Same defensive check as extract_facts — confirmed identity overrides
+    any stale error from prior turns.
+    """
+    identity = state.get("identity", {})
+    identity_good = identity.get("match_status") in ("confirmed", "multiple_matches")
+
+    if state.get("error") and not identity_good:
         return state
 
     identity = state.get("identity", {})
@@ -204,7 +246,8 @@ def capture_to_bridge(state: MemoryState) -> MemoryState:
 
 def enrich_from_paige(state: MemoryState) -> MemoryState:
     """Pull coach assignments + deals from Paige (Wave 2 verbs) and merge as
-    additional facts. Skips silently if not configured. Doctrine §86."""
+    additional facts. Fire-and-forget on failure — Paige enrichment is nice-to-have
+    not blocking. Doctrine §86: Paige is source for pipeline/coach data."""
     capture = state.get("capture_result", {})
     if not capture.get("ok") or not PAIGE_BRIDGE_API_KEY:
         return {**state, "paige_context": {"ok": False, "skipped": "no capture or no Paige bridge key"}}
@@ -217,6 +260,7 @@ def enrich_from_paige(state: MemoryState) -> MemoryState:
     coach_res = _paige_post({"verb": "get_coach_for_client", "payload": {"email": email}}, timeout=15.0)
     deals_res = _paige_post({"verb": "get_opportunities_for_contact", "payload": {"email": email, "limit": 25}}, timeout=15.0)
 
+    # Build secondary facts from Paige data
     paige_facts: List[dict] = []
 
     assignments = (coach_res.get("data") or coach_res).get("assignments", []) if isinstance(coach_res, dict) else []
@@ -251,6 +295,7 @@ def enrich_from_paige(state: MemoryState) -> MemoryState:
             "note": "no coach/deal data in Paige for this contact"
         }}
 
+    # Append Paige facts to the same profile (separate capture call so source/meta are clean)
     follow_up = _bridge_post(CUSTOMER_MEMORY_URL, {
         "verb": "capture",
         "email": email,
@@ -275,6 +320,7 @@ def enrich_from_paige(state: MemoryState) -> MemoryState:
 
 
 def notify_admin(state: MemoryState) -> MemoryState:
+    """Telegram digest via mma-os-bridge push_admin_notification."""
     capture = state.get("capture_result", {})
     paige = state.get("paige_context", {})
     if not capture.get("ok"):
@@ -321,7 +367,9 @@ def build_graph() -> StateGraph:
     g.add_edge("capture_to_bridge", "enrich_from_paige")
     g.add_edge("enrich_from_paige", "notify_admin")
     g.add_edge("notify_admin", END)
+    g.add_edge("notify_admin", END)
     return g.compile()
 
 
+# Required export for langgraph.json
 graph = build_graph()
