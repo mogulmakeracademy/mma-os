@@ -25,7 +25,8 @@
     "customer_success_department": "./src/agents/customer_success_department.py:graph",
     "sales_department": "./src/agents/sales_department.py:graph",
     "launchpad_orchestrator": "./src/agents/launchpad_orchestrator.py:graph",
-    "btf_stall_detector": "./src/agents/btf_stall_detector.py:graph"
+    "btf_stall_detector": "./src/agents/btf_stall_detector.py:graph",
+    "btf_education_engine": "./src/agents/btf_education_engine.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
