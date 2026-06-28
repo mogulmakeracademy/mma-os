@@ -4,7 +4,7 @@ trigger: Every Friday 9 AM ET — auto-generated from btf_phase_items + btf_touc
 from: antonio@mogulmakeracademy.com
 reply_to: antonio@mogulmakeracademy.com
 voice: status report meets founder check-in
-status: DRAFT v1
+status: DRAFT v2 (Workshop Wednesday removed — BTF clients already converted, do not need re-sold)
 ---
 
 Subject: Your Week with MMA — {{phase_name}} progress
@@ -34,11 +34,7 @@ Here's where you stand at the end of the week.
 Nothing on your plate from us this week — we're working in the background. State filings and tradeline reports are processing. You'll see updates in your workspace as they land.
 {{/if}}
 
-A reminder: Phase {{phase_position}} typically takes {{expected_phase_duration}}. You're {{days_in_phase}} days in. Right on track / a little behind / ahead of pace (filled in by progress logic).
-
-Workshop Wednesday this week is about {{workshop_topic}}. Live at 7 PM ET. Worth showing up — most of the people in your situation use that hour to ask the questions that come up between coach check-ins.
-
-[Workshop Wednesday details →]({{workshop_url}})
+A reminder: Phase {{phase_position}} typically takes {{expected_phase_duration}}. You're {{days_in_phase}} days in. {{pace_status}}
 
 Keep going.
 
