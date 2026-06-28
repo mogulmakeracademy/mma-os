@@ -2,8 +2,8 @@
   "dependencies": ["."],
   "graphs": {
     "brain_health_monitor": "./src/agents/brain_health_monitor.py:graph",
-    "contact_sync": "./src/agents/contact_sync.py:graph"
-  },
+    "contact_sync": "./src/agents/contact_sync.py:graph",
+      "customer_memory": "./src/agents/customer_memory.py:graph"},
   "env": ".env",
   "python_version": "3.11"
 }
