@@ -1,10 +1,11 @@
 """
-Master Orchestrator — LangGraph v2 (LLM resilience + URL collision fix)
-v2 fixes:
-  - LLM call returns empty content -> fall back to heuristic instead of erroring
-  - LLM call bumped timeout 20s -> 30s
-  - API error response surfaced in reasoning for debugging
-  - Switched SUPABASE_URL -> MMA_OS_SUPABASE_URL to avoid env collision
+Master Orchestrator — LangGraph v2.2
+v2.2 changes:
+  - DOMAIN_REGISTRY now routes comms, revenue, crm to their LIVE LangGraph agents
+    (instead of stubs). Only lifecycle/monitoring/content/support remain stubs.
+  - System prompt tightened: campaigns/Engine v4.5/cohort sends = REVENUE.
+    Tag badges on contacts = CRM. Enrollment moves between tiers = LIFECYCLE.
+  - All v2 LLM resilience + URL collision fixes preserved.
 """
 from __future__ import annotations
 import os, json, time
@@ -20,16 +21,16 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 MMA_OS_BRIDGE_API_KEY = os.environ.get("MMA_OS_BRIDGE_API_KEY", "")
 LANGGRAPH_WRITER_API_KEY = os.environ.get("LANGGRAPH_WRITER_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20251022")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 DOMAIN_REGISTRY = {
-    "comms": {"type": "langgraph", "graph_id": "comms_orchestrator"},
-    "crm": {"type": "stub", "note": "crm_orchestrator pending"},
-    "lifecycle": {"type": "stub", "note": "lifecycle_orchestrator pending"},
-    "revenue": {"type": "stub", "note": "revenue_orchestrator pending"},
+    "comms":      {"type": "langgraph", "graph_id": "comms_orchestrator"},
+    "revenue":    {"type": "langgraph", "graph_id": "revenue_orchestrator"},
+    "crm":        {"type": "langgraph", "graph_id": "crm_orchestrator"},
+    "lifecycle":  {"type": "stub", "note": "lifecycle_orchestrator pending"},
     "monitoring": {"type": "stub", "note": "monitoring_orchestrator pending"},
-    "content": {"type": "stub", "note": "content_orchestrator pending"},
-    "support": {"type": "n8n_webhook", "url": os.environ.get("CS_WEBHOOK_URL", "")},
+    "content":    {"type": "stub", "note": "content_orchestrator pending"},
+    "support":    {"type": "n8n_webhook", "url": os.environ.get("CS_WEBHOOK_URL", "")},
 }
 
 class MasterState(TypedDict, total=False):
@@ -54,7 +55,7 @@ def _post(url, body, bearer, timeout=30.0):
             try:
                 return resp.json()
             except Exception:
-                return {"ok": False, "error": f"non-json response"}
+                return {"ok": False, "error": "non-json response"}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -79,20 +80,22 @@ def _supabase_patch(table, pk_field, pk_value, payload):
         return {"ok": False, "error": "SUPABASE_SERVICE_ROLE_KEY not set"}
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.patch(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?{pk_field}=eq.{pk_value}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}, json=payload)
+            resp = client.patch(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?{pk_field}=eq.{pk_value}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json"}, json=payload)
             return {"ok": resp.status_code < 300, "status": resp.status_code}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 def _heuristic_intent(text):
-    """Keyword-based fallback when LLM is unavailable or returns empty."""
     lower = text.lower()
-    if any(k in lower for k in ("telegram", "alert", "notify", "send", "email", "sms", "message", "tell", "ping", "alive")):
-        return {"domain": "comms", "action": "notify_admin", "payload": {"message": text}, "confidence": 0.5, "reasoning": "heuristic match"}
-    if any(k in lower for k in ("tag", "ghl", "contact", "lead", "opportunity")):
-        return {"domain": "crm", "action": "unknown", "payload": {"raw": text}, "confidence": 0.4, "reasoning": "heuristic crm match"}
-    if any(k in lower for k in ("campaign", "enroll", "fire", "send to cohort", "skool")):
-        return {"domain": "revenue", "action": "unknown", "payload": {"raw": text}, "confidence": 0.4, "reasoning": "heuristic revenue match"}
+    # Most specific first
+    if any(k in lower for k in ("campaign", "engine v4", "cohort", "skool 45", "kill switch", "pause campaign", "fire campaign")):
+        return {"domain": "revenue", "action": "unknown", "payload": {"raw": text}, "confidence": 0.5, "reasoning": "heuristic revenue match"}
+    if any(k in lower for k in ("tag", "tier badge", "add note", "update contact", "ghl contact", "create contact", "search contact")):
+        return {"domain": "crm", "action": "unknown", "payload": {"raw": text}, "confidence": 0.5, "reasoning": "heuristic crm match"}
+    if any(k in lower for k in ("enrollment", "tier move", "upgrade to premium", "downgrade", "move from")):
+        return {"domain": "lifecycle", "action": "unknown", "payload": {"raw": text}, "confidence": 0.5, "reasoning": "heuristic lifecycle match"}
+    if any(k in lower for k in ("telegram", "alert", "notify", "send a", "email antonio", "sms antonio", "message me")):
+        return {"domain": "comms", "action": "notify_admin", "payload": {"message": text}, "confidence": 0.5, "reasoning": "heuristic comms match"}
     return {"domain": "unknown", "action": "unknown", "payload": {}, "confidence": 0.0, "reasoning": "heuristic miss"}
 
 def _claude_resolve_intent(text, source, context, hint):
@@ -101,9 +104,19 @@ def _claude_resolve_intent(text, source, context, hint):
         h["reasoning"] = "no Anthropic key, " + h["reasoning"]
         return h
 
+    # v2.2: clearer domain boundaries (esp. revenue vs crm)
     system_prompt = (
-        "You are the Master Orchestrator of MMA OS. Classify the request into a domain and action.\n"
-        "Domains: comms, crm, lifecycle, revenue, monitoring, content, support, unknown.\n"
+        "You are the Master Orchestrator of MMA OS. Classify the request into a domain and action.\n\n"
+        "DOMAIN DEFINITIONS (read carefully — boundaries matter):\n"
+        "- comms: Send/receive messages (Telegram, Email, SMS, admin alerts)\n"
+        "- crm: GHL contact-level operations — tag badges, notes, contact fields, opportunities. NOT campaigns.\n"
+        "- lifecycle: Moving a contact between tiers (Standard->Premium, Premium->VIP), enrolling/unenrolling from campaigns, lifecycle stage changes.\n"
+        "- revenue: Campaign-level operations — fire/kill/pause campaigns, Engine v4.5 controls, cohort sends, pipeline management. ANYTHING about a 'campaign' (Skool 45-day, July 4th, etc.) goes here.\n"
+        "- monitoring: Quality checks, drift detection, system health audits, agent diagnostics\n"
+        "- content: Editorial pipeline, Mogul Brief, Coffee Hour content production\n"
+        "- support: Customer support tickets, /support commands, escalations\n"
+        "- unknown: When intent is unclear or out of scope\n\n"
+        "Key disambiguation: 'Tag Tashia as VIP' = crm (tagging a contact). 'Run the Standard upgrade campaign' = revenue (firing a campaign). 'Move Tashia from Standard to Premium tier' = lifecycle (cross-tier movement).\n\n"
         'Return ONLY JSON: { "domain": str, "action": str, "payload": dict, "confidence": 0..1, "reasoning": str }'
     )
     hint_str = f"\nHint: {hint}" if hint else ""
@@ -116,14 +129,12 @@ def _claude_resolve_intent(text, source, context, hint):
             try:
                 data = resp.json()
             except Exception:
-                # Non-JSON response (rare). Fall back to heuristic.
                 h = _heuristic_intent(text)
                 h["reasoning"] = f"LLM non-json (http {http_status}); " + h["reasoning"]
                 return h
             content_blocks = data.get("content", [])
             raw = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text").strip()
             if not raw:
-                # Empty content — likely API error. Fall back to heuristic.
                 api_error = data.get("error", {}).get("message", "no error msg")[:200] if isinstance(data.get("error"), dict) else str(data)[:200]
                 h = _heuristic_intent(text)
                 h["reasoning"] = f"LLM empty (http {http_status}, api_err: {api_error}); " + h["reasoning"]
@@ -135,7 +146,6 @@ def _claude_resolve_intent(text, source, context, hint):
             try:
                 return json.loads(raw)
             except Exception:
-                # LLM returned text but not valid JSON. Fall back to heuristic.
                 h = _heuristic_intent(text)
                 h["reasoning"] = f"LLM unparseable: {raw[:100]}; " + h["reasoning"]
                 return h
@@ -166,7 +176,7 @@ def dispatch_to_domain(state):
     domain = intent.get("domain", "unknown")
     registry_entry = DOMAIN_REGISTRY.get(domain)
     if not registry_entry:
-        return {**state, "dispatch_result": {"ok": False, "error": f"unknown_domain:{domain}", "status": "unknown_intent"}}
+        return {**state, "dispatch_result": {"ok": False, "error": f"unknown_domain:{domain}"}}
     target_type = registry_entry["type"]
     if target_type == "stub":
         return {**state, "dispatch_result": {"ok": True, "stub": True, "domain": domain, "note": registry_entry["note"], "intent": intent}}
@@ -204,13 +214,13 @@ def summarize(state):
     if state.get("error"):
         summary = f"Master ERROR: {state['error']}"
     elif intent.get("domain") == "unknown":
-        summary = f"Master v2: unknown (conf {intent.get('confidence', 0)}) -- {intent.get('reasoning', 'n/a')[:120]}"
+        summary = f"Master v2.2: unknown (conf {intent.get('confidence', 0)}) -- {intent.get('reasoning', 'n/a')[:120]}"
     elif result.get("stub"):
-        summary = f"Master v2 -> {intent.get('domain')} (stub): {result.get('note')}"
+        summary = f"Master v2.2 -> {intent.get('domain')} (stub): {result.get('note')}"
     elif result.get("ok"):
-        summary = f"Master v2 -> {intent.get('domain')}.{intent.get('action')} OK (conf {intent.get('confidence', 0)})"
+        summary = f"Master v2.2 -> {intent.get('domain')}.{intent.get('action')} OK (conf {intent.get('confidence', 0)})"
     else:
-        summary = f"Master v2 -> {intent.get('domain')}.{intent.get('action')} FAILED: {result.get('error', 'unknown')}"
+        summary = f"Master v2.2 -> {intent.get('domain')}.{intent.get('action')} FAILED: {result.get('error', 'unknown')}"
     return {**state, "summary": summary}
 
 def build_graph():
