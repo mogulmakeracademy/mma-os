@@ -1,8 +1,9 @@
 """
-Comms-DX Agent — LangGraph v1
+Comms-DX Agent — LangGraph v2 (URL collision fix)
 Doctrine §90: Diagnostic+Fix child for the Comms domain.
-Runs health checks on each comms-domain specialist; retries failures; updates
-system_health table; escalates unhealed via Telegram.
+v2: switched from SUPABASE_URL (which collided with other agents' env vars
+pointing to different projects) to MMA_OS_FUNCTIONS_BASE — canonical URL
+to our mma-os Supabase project's functions endpoint, hardcoded default.
 """
 from __future__ import annotations
 import os, time
@@ -10,21 +11,22 @@ from typing import TypedDict, Optional, List
 import httpx
 from langgraph.graph import StateGraph, START, END
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co")
+# Canonical mma-os functions base. ALWAYS hits our project — no env var collision possible.
+MMA_OS_FUNCTIONS_BASE = os.environ.get("MMA_OS_FUNCTIONS_BASE", "https://slcqeiqcrhepicqxqjng.supabase.co/functions/v1")
+MMA_OS_SUPABASE_URL = os.environ.get("MMA_OS_SUPABASE_URL", "https://slcqeiqcrhepicqxqjng.supabase.co")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 MMA_OS_BRIDGE_API_KEY = os.environ.get("MMA_OS_BRIDGE_API_KEY", "")
 N8N_WRITER_API_KEY = os.environ.get("N8N_WRITER_API_KEY", "")
 NOTION_WRITER_API_KEY = os.environ.get("NOTION_WRITER_API_KEY", "")
 EDGE_FN_WRITER_API_KEY = os.environ.get("EDGE_FN_WRITER_API_KEY", "")
 LANGGRAPH_WRITER_API_KEY = os.environ.get("LANGGRAPH_WRITER_API_KEY", "")
-FUNCTIONS_BASE = f"{SUPABASE_URL}/functions/v1"
 
 HEALTH_CHECKS = [
-    {"agent": "mma-os-bridge",        "domain": "comms", "tier": 2, "url": f"{FUNCTIONS_BASE}/mma-os-bridge",        "key_env": "MMA_OS_BRIDGE_API_KEY",  "body": {"verb": "health"}, "fallback_body": {"verb": "push_admin_notification", "category": "dx_probe", "severity": "debug", "message": "__dx_probe__", "metadata": {"silent": True}}},
-    {"agent": "n8n-writer",           "domain": "comms", "tier": 2, "url": f"{FUNCTIONS_BASE}/n8n-writer",           "key_env": "N8N_WRITER_API_KEY",     "body": {"verb": "health"}},
-    {"agent": "notion-writer",        "domain": "comms", "tier": 2, "url": f"{FUNCTIONS_BASE}/notion-writer",        "key_env": "NOTION_WRITER_API_KEY",  "body": {"verb": "health"}},
-    {"agent": "edge-function-writer", "domain": "comms", "tier": 2, "url": f"{FUNCTIONS_BASE}/edge-function-writer", "key_env": "EDGE_FN_WRITER_API_KEY", "body": {"verb": "health"}},
-    {"agent": "langgraph-bridge",     "domain": "comms", "tier": 2, "url": f"{FUNCTIONS_BASE}/langgraph-bridge",     "key_env": "LANGGRAPH_WRITER_API_KEY", "body": {"verb": "health"}},
+    {"agent": "mma-os-bridge",        "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge",        "key_env": "MMA_OS_BRIDGE_API_KEY",  "body": {"verb": "health"}, "fallback_body": {"verb": "push_admin_notification", "category": "dx_probe", "severity": "debug", "message": "__dx_probe__", "metadata": {"silent": True}}},
+    {"agent": "n8n-writer",           "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/n8n-writer",           "key_env": "N8N_WRITER_API_KEY",     "body": {"verb": "health"}},
+    {"agent": "notion-writer",        "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/notion-writer",        "key_env": "NOTION_WRITER_API_KEY",  "body": {"verb": "health"}},
+    {"agent": "edge-function-writer", "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/edge-function-writer", "key_env": "EDGE_FN_WRITER_API_KEY", "body": {"verb": "health"}},
+    {"agent": "langgraph-bridge",     "domain": "comms", "tier": 2, "url": f"{MMA_OS_FUNCTIONS_BASE}/langgraph-bridge",     "key_env": "LANGGRAPH_WRITER_API_KEY", "body": {"verb": "health"}},
 ]
 
 class DXState(TypedDict, total=False):
@@ -52,7 +54,7 @@ def _supabase_upsert(table, payload, on_conflict):
         return {"ok": False, "error": "SUPABASE_SERVICE_ROLE_KEY not set"}
     try:
         with httpx.Client(timeout=10.0) as client:
-            resp = client.post(f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation,resolution=merge-duplicates"}, json=payload)
+            resp = client.post(f"{MMA_OS_SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}", headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation,resolution=merge-duplicates"}, json=payload)
             data = resp.json() if resp.text else {}
             if resp.status_code >= 300:
                 return {"ok": False, "status": resp.status_code, "error": data}
@@ -61,7 +63,7 @@ def _supabase_upsert(table, payload, on_conflict):
         return {"ok": False, "error": str(exc)}
 
 def _bridge_alert(message, severity="warning", metadata=None):
-    return _post(f"{FUNCTIONS_BASE}/mma-os-bridge", {"verb": "push_admin_notification", "category": "comms_dx", "severity": severity, "message": message, "metadata": metadata or {}}, MMA_OS_BRIDGE_API_KEY, timeout=10.0)
+    return _post(f"{MMA_OS_FUNCTIONS_BASE}/mma-os-bridge", {"verb": "push_admin_notification", "category": "comms_dx", "severity": severity, "message": message, "metadata": metadata or {}}, MMA_OS_BRIDGE_API_KEY, timeout=10.0)
 
 def _key_for(env_name):
     return os.environ.get(env_name, "")
@@ -136,11 +138,11 @@ def summarize(state):
     if total == 0:
         summary = "Comms-DX: no checks ran"
     elif healthy == total:
-        summary = f"Comms-DX: {healthy}/{total} healthy"
+        summary = f"Comms-DX v2: {healthy}/{total} healthy"
         if healed:
             summary += f" ({healed} self-healed)"
     else:
-        summary = f"Comms-DX: {healthy}/{total} healthy, {escalated} escalation(s) sent"
+        summary = f"Comms-DX v2: {healthy}/{total} healthy, {escalated} escalation(s) sent"
     return {**state, "summary": summary}
 
 def build_graph():
