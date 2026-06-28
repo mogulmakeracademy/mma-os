@@ -18,7 +18,8 @@
     "content_orchestrator": "./src/agents/content_orchestrator.py:graph",
     "content_dx": "./src/agents/content_dx.py:graph",
     "support_orchestrator": "./src/agents/support_orchestrator.py:graph",
-    "support_dx": "./src/agents/support_dx.py:graph"
+    "support_dx": "./src/agents/support_dx.py:graph",
+    "operations_department": "./src/agents/operations_department.py:graph"
   },
   "env": ".env",
   "python_version": "3.11"
