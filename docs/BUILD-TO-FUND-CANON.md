@@ -37,10 +37,6 @@ Workshop Wednesday (live, weekly, primary conversion engine)
 
 Post-FUND: Future VAULT tier (TBD)
 
-## FIRST CLOSED DEAL (anchor reference)
-
-Jacqueline Turner   First paid BTF client   Payment collecting 2026-06-24
-
 ## BRAND SPINE (Doctrine §99 lock-in)
 
 Master framework:  3M  Make / Manage / Multiply
@@ -106,7 +102,7 @@ By 2026-09-26:
   - Paid ads (Meta + Google) producing predictable CPR-to-Workshop
   - Workshop Wed clips library growing weekly
   - Multiple BTF clients moving Phase 1 -> Phase 2
-  - First FUNDED client beyond Jacqueline
+  - First FUNDED client (i.e., first paying close completes BUILD/STACK/FUND end-to-end)
 
 ## DEPARTMENT OWNERSHIP IN MMA OS
 
