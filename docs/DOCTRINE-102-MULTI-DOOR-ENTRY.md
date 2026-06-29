@@ -64,11 +64,11 @@ When a prospect asks "where do I start?", the answer is:
   - §100 (Revenue Ladder) — the term "ladder" implies sequence. Rename mentally to "Revenue Menu" or "Revenue Pool." Customers don't climb a ladder; they pick from a menu.
   - §101 (Three Revenue Streams) — accurate on the streams; needed the multi-door framing layered on top.
 
-## Codified examples
+## Codified examples (archetype-only per Doctrine §116)
 
-GOOD: "Jacqueline closed BTF directly after attending a workshop. She didn't go through Launch Pad and isn't currently in the community."
+GOOD: "A workshop attendee closed BTF directly. They didn't go through Launch Pad and aren't currently in the community."
 
-BAD: "Jacqueline entered through the community, took the Fundability Check, then converted to BTF."
+BAD: "Every BTF client comes from the community first, then Fundability Check, then BTF in sequence."
 
 GOOD: "We have multiple entry points so prospects can find us through whatever channel fits them — social, workshops, referrals, ads, direct search."
 
