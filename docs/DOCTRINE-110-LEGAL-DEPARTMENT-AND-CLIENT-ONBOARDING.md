@@ -26,23 +26,17 @@ Responsibilities:
 
 ## The Six-Stage BTF Onboarding Flow
 
-STAGE 1: TRIGGER (manual rep action)
-  Rep fires sales_dept.send_workspace_invite(deal_id). Paige creates Client account, sends welcome email with magic-link.
+STAGE 1: TRIGGER (manual rep action) — Rep fires sales_dept.send_workspace_invite(deal_id). Paige creates Client account, sends welcome email with magic-link.
 
-STAGE 2: AGREEMENT SIGNING
-  Client clicks magic-link, lands at Sign Agreement screen (NOT workspace home yet). Display BTF Service Agreement personalized with Client name + Entity + Payment Plan. Capture electronic signature (typed name + signature pad + IP + timestamp + user agent). Mandatory — cannot proceed without signing. Store signed PDF in paige_signed_agreements table. Paige fires agreement_signed event → MMA OS legal_orchestrator logs.
+STAGE 2: AGREEMENT SIGNING — Client clicks magic-link, lands at Sign Agreement screen. Display BTF Service Agreement personalized with Client name + Entity + Payment Plan. Capture electronic signature (typed name + signature pad + IP + timestamp + user agent). Mandatory. Store signed PDF in paige_signed_agreements table. Paige fires agreement_signed event → MMA OS legal_orchestrator logs.
 
-STAGE 3: PAYMENT TERMS ACCEPTANCE
-  Display selected Payment Plan + Total + Schedule. Capture Client confirmation of payment method + recurring billing authorization. Mandatory. Store billing authorization. Paige fires payment_authorized event → MMA OS sales_dept records.
+STAGE 3: PAYMENT TERMS ACCEPTANCE — Display selected Payment Plan + Total + Schedule. Capture Client confirmation of payment method + recurring billing authorization. Mandatory. Store billing authorization. Paige fires payment_authorized event → MMA OS sales_dept records.
 
-STAGE 4: INTAKE FORM
-  Multi-step intake (Entity Info, Personal Info, Business Profile, Funding Goal, Documents I Have). Capture SSN (encrypted), entity formation date, EIN status, address, banking situation. Paige fires intake_submitted event → MMA OS advances current_phase pre_build → build.
+STAGE 4: INTAKE FORM — Multi-step intake (Entity Info, Personal Info, Business Profile, Funding Goal, Documents I Have). Capture SSN (encrypted), entity formation date, EIN status, address, banking situation. Paige fires intake_submitted event → MMA OS advances current_phase pre_build → build.
 
-STAGE 5: INITIAL DOCUMENT UPLOAD
-  Required + optional documents checklist. Required: Government ID. Optional: Articles of Organization, EIN letter, recent bank statements. Files to client record document vault. Paige fires documents_initial_uploaded → MMA OS coach_orchestrator pings assigned coach.
+STAGE 5: INITIAL DOCUMENT UPLOAD — Required + optional documents checklist. Required: Government ID. Optional: Articles of Organization, EIN letter, recent bank statements. Files to client record document vault. Paige fires documents_initial_uploaded → MMA OS coach_orchestrator pings assigned coach.
 
-STAGE 6: WORKSPACE HANDOFF + WELCOME
-  Full BTF workspace home (voice chat, task list, phase tracker, coach thread, document vault). Send btf_welcome email via send_btf_template_email. btf_education_engine queues Email #1 for Day +4. Coach assigned, sends first welcome message via send_btf_message.
+STAGE 6: WORKSPACE HANDOFF + WELCOME — Full BTF workspace home (voice chat, task list, phase tracker, coach thread, document vault). Send btf_welcome email via send_btf_template_email. btf_education_engine queues Email #1 for Day +4. Coach assigned, sends first welcome message via send_btf_message.
 
 ## What this enforces
 
@@ -53,7 +47,7 @@ STAGE 6: WORKSPACE HANDOFF + WELCOME
 
 ## Trigger via voice (future)
 
-Antonio via Claude/ChatGPT with Paige MCP synced: "Start onboarding for Jacqueline Turner" → LLM calls Paige MCP bridge verb send_workspace_invite → Paige creates account + emails magic-link → Antonio gets Telegram confirmation.
+Antonio via Claude/ChatGPT with Paige MCP synced: "Start onboarding for [client identifier]" → LLM calls Paige MCP bridge verb send_workspace_invite → Paige creates account + emails magic-link → Antonio gets Telegram confirmation.
 
 The voice flow is just a wrapper over the same manual trigger.
 
