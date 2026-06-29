@@ -4,7 +4,7 @@
 
 ## The directive
 
-The system must work for every customer of its archetype identically. No customer-specific code, no named-customer optimizations, no per-person workflows. The founder is the only individual whose name appears in code, doctrines, or build instructions. This includes negative references ("we don't do X for [name]") — even those are violations.
+The system must work for every customer of its archetype identically. No customer-specific code, no named-customer optimizations, no per-person workflows. The founder is the only individual whose name appears in code, doctrines, or build instructions. This includes negative references ("we don't do X for [name]") - those are violations too.
 
 ## The principle
 
@@ -58,8 +58,8 @@ Same outcome. Different mental model. The second extends to client #2, #3, #1,00
 
 ## Cross-doctrine consistency
 
-- **Doctrine S72** (Exit-Ready Architecture) — This doctrine is its operating principle at the customer level
-- **Doctrine S73** (Test fires route to Antonio first) — Synthetic test personas use Antonio's own email, never real customer addresses
-- **Doctrine S113** (Legal Dept — one template per program, not per client) — Same principle at the legal layer
-- **Doctrine S114** (Template content/delivery separation) — Templates are PER PROGRAM not PER CLIENT
-- **Doctrine S115** (Multi-tenant pivot) — Multi-tenant only works if the system is generalized; this doctrine is what enables that
+- **Doctrine S72** (Exit-Ready Architecture) - This doctrine is its operating principle at the customer level
+- **Doctrine S73** (Test fires route to Antonio first) - Synthetic test personas use Antonio's own email, never real customer addresses
+- **Doctrine S113** (Legal Dept - one template per program, not per client) - Same principle at the legal layer
+- **Doctrine S114** (Template content/delivery separation) - Templates are PER PROGRAM not PER CLIENT
+- **Doctrine S115** (Multi-tenant pivot) - Multi-tenant only works if the system is generalized; this doctrine is what enables that
