@@ -8,14 +8,13 @@
 **Paige is NOT a marketing platform.** (GoHighLevel does that. Stay in your lane.)
 **Paige IS a sales machine for capital professionals.**
 
-Think Pipedrive discipline + financial knowledge depth + conversational AI interface +
-direct plug-ins to the capital ecosystem (funding marketplaces, CDFIs, lenders).
+Think Pipedrive discipline + financial knowledge depth + conversational AI interface + direct plug-ins to the capital ecosystem (funding marketplaces, CDFIs, lenders).
 
 ## Target ICP (Ideal Customer Profile) — Evolution
 
 ### Phase 1: Internal MMA use (NOW)
   - Antonio + MMA staff + assigned coaches
-  - BTF clients (Jacqueline first, then every future close)
+  - BTF clients (every paying close, starting with the first)
   - Inside MMA learning loop, polishing the product
 
 ### Phase 2: MMA-adjacent professionals (Q3-Q4 2026)
@@ -49,28 +48,13 @@ Antonio gets: platform revenue at scale + every client funneled through MMA OS f
 
 ### The 4-system division of labor
 
-**LangGraph (Tier 0/1/2 swarm)**
-  - Master Orchestrator + 7 domain orchestrators + 7 DX agents + 4 Department heads
-  - Master brain that DECIDES what should happen
-  - Cross-cutting intelligence (route, qualify, escalate, compose)
+**LangGraph (Tier 0/1/2 swarm)** - Master Orchestrator + 7 domain orchestrators + 7 DX agents + 4 Department heads. Master brain that DECIDES what should happen. Cross-cutting intelligence (route, qualify, escalate, compose).
 
-**n8n (workflow execution)**
-  - Cron-fired campaigns (Skool Nurture v4.5, July 4th Comeback, future flows)
-  - HTTP webhooks (GHL inbound, Skool events, Paige events)
-  - Heavy stateful workflows that benefit from visual orchestration
-  - The "muscle" that fires what the brain decides
+**n8n (workflow execution)** - Cron-fired campaigns, HTTP webhooks (GHL inbound, Skool events, Paige events), heavy stateful workflows. The "muscle" that fires what the brain decides.
 
-**Notion (knowledge + canonical content)**
-  - Email templates (Skool engine pulls live per Doctrine §64)
-  - Curriculum + courses (47 MMA classes)
-  - Decision rules + playbooks (GHL AI Agents read these per Doctrine §71)
-  - The "library" that Claude + agents + humans all reference
+**Notion (knowledge + canonical content)** - Email templates (Skool engine pulls live per Doctrine §64), curriculum + courses, decision rules + playbooks (GHL AI Agents read these per Doctrine §71). The "library" that Claude + agents + humans all reference.
 
-**Paige (the user-facing platform)**
-  - All client + broker + coach + admin interactions
-  - Workspaces, dashboards, message threads, document storage
-  - The "showroom" that humans actually touch
-  - Eventually: conversational AI interface on mobile (talk to Paige to manage clients)
+**Paige (the user-facing platform)** - All client + broker + coach + admin interactions, workspaces, dashboards, message threads, document storage. The "showroom" that humans actually touch. Eventually: conversational AI interface on mobile.
 
 ### The handshake pattern
 
@@ -83,7 +67,7 @@ Antonio gets: platform revenue at scale + every client funneled through MMA OS f
 ### For capital professionals (brokers, coaches, loan officers)
 
   - Log in on their device (mobile-first eventually)
-  - **Talk directly to Paige**: "Add this client", "What stage is Sarah in?", "Send a phase advance email", "Pull a credit report for Mike"
+  - **Talk directly to Paige**: "Add this client", "What stage is this client in?", "Send a phase advance email", "Pull a credit report for this client"
   - Paige responds + executes: moves files, shifts documents, creates records, fires emails
   - No clicking through 14 menus. Conversational interface.
   - All the heavy lifting (LangGraph + n8n + Notion) happens invisibly in the background
@@ -97,21 +81,19 @@ Antonio gets: platform revenue at scale + every client funneled through MMA OS f
 
 ## External Integrations Roadmap
 
-Each integration multiplies the platform value:
-
-  - **Funding marketplaces** (Lendio, Fundera, etc.) — match clients to lenders programmatically
-  - **CDFIs** — direct underwriting relationships for underserved business owners
+  - **Funding marketplaces** (Lendio, Fundera, etc.)
+  - **CDFIs** — direct underwriting relationships
   - **Direct lender partnerships** — SBA, online lenders, credit unions, regional banks
-  - **Credit bureau APIs** — D&B, Experian Business, Equifax Business — pull files programmatically
+  - **Credit bureau APIs** — D&B, Experian Business, Equifax Business
   - **Business formation services** — direct API to LegalZoom, Northwest, etc.
-  - **Banking APIs** — Plaid / Mercury / Brex for business banking provisioning
-  - **Document verification** — Persona / Stripe Identity for KYC on signup
+  - **Banking APIs** — Plaid / Mercury / Brex
+  - **Document verification** — Persona / Stripe Identity for KYC
 
 ## What This DOES NOT Mean
 
-  - Paige does NOT compete with GHL on marketing automation. GHL stays the marketing tool.
-  - Paige does NOT replace Skool. Skool stays the community.
-  - Paige does NOT become a general-purpose CRM. Specialty stays in capital + fundability.
+  - Paige does NOT compete with GHL on marketing automation
+  - Paige does NOT replace Skool
+  - Paige does NOT become a general-purpose CRM
   - We do NOT pursue every adjacent feature. Sales machine discipline.
 
 ## What This DOES Mean for Current Build Priorities
@@ -120,10 +102,8 @@ Each integration multiplies the platform value:
   - Public /signup (just shipped) — opens the self-serve door for prospects
   - Admin panel + role flexibility — table stakes for multi-tenant brokers later
   - Offer management (Day 8) — sets up the multi-offer SaaS model
-  - Next priorities (post Day 8): conversational AI interface inside Paige, broker invite flow, commission tracking, first external integration (Lendio or similar marketplace)
+  - Next priorities (post Day 8): conversational AI interface inside Paige, broker invite flow, commission tracking, first external integration
 
 ## Bottom line
 
-Build everything with the END USER in mind: a loan officer sitting in their office at 9pm,
-pulling out their phone, opening Paige, talking to it like a colleague, and going home
-with 3 more clients closer to funded than they were that morning. That is the bar.
+Build everything with the END USER in mind: a loan officer sitting in their office at 9pm, pulling out their phone, opening Paige, talking to it like a colleague, and going home with 3 more clients closer to funded than they were that morning. That is the bar.
