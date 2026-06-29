@@ -1,9 +1,9 @@
 """
-Comms Domain Orchestrator â LangGraph v2
+Comms Domain Orchestrator Ã¢ÂÂ LangGraph v2
 v2 changes:
   - DIRECT Telegram Bot API call (bypass mma-os-bridge which was proxying to Paige with bad creds)
-  - TASK_REGISTRY now has aliases â LLM action 'send_telegram_message' aliases to 'send_telegram'
-  - Fuzzy task resolution per Doctrine Â§96 â if no exact/alias match, default to notify_admin
+  - TASK_REGISTRY now has aliases Ã¢ÂÂ LLM action 'send_telegram_message' aliases to 'send_telegram'
+  - Fuzzy task resolution per Doctrine ÃÂ§96 Ã¢ÂÂ if no exact/alias match, default to notify_admin
   - Support reply_to_chat_id in payload for two-way Telegram (future-ready)
 """
 from __future__ import annotations
@@ -19,18 +19,22 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "5188669161")  # Antonio's chat ID (from MMA Telegram Bridge)
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 MMA_OS_BRIDGE_API_KEY = os.environ.get("MMA_OS_BRIDGE_API_KEY", "")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "alerts@mogulmakeracademy.com")
+INTERNAL_EMAIL_TO = os.environ.get("INTERNAL_EMAIL_TO", "mrmogulmaker@gmail.com")
 
-# Doctrine Â§96: task aliases for LLM-flexibility
+# Doctrine ÃÂ§96: task aliases for LLM-flexibility
 TASK_REGISTRY = {
     "send_telegram":       {"specialist": "telegram_bot_api",  "via": "direct_telegram", "aliases": ["send_telegram_message", "telegram", "send_tg", "tg_send"]},
     "send_admin_alert":    {"specialist": "telegram_bot_api",  "via": "direct_telegram", "aliases": ["admin_alert", "alert_admin", "notify_admin_telegram"]},
     "notify_admin":        {"specialist": "telegram_bot_api",  "via": "direct_telegram", "aliases": ["notify", "alert", "admin_notify", "send_notification"]},
     "send_email_ghl":      {"specialist": "ghl_email",          "via": "bridge_verb", "verb": "send_ghl_email", "aliases": ["send_email", "email"]},
     "send_sms_ghl":        {"specialist": "ghl_sms",            "via": "bridge_verb", "verb": "send_ghl_sms", "aliases": ["send_sms", "sms"]},
+    "send_internal_email": {"specialist": "resend_api",       "via": "direct_resend", "aliases": ["email_alert", "internal_email", "email_antonio", "ops_email", "alert_email"]},
 }
 
 def _resolve_task(action_str):
-    """Doctrine Â§96: exact match â alias match â fuzzy substring â default to notify_admin."""
+    """Doctrine ÃÂ§96: exact match Ã¢ÂÂ alias match Ã¢ÂÂ fuzzy substring Ã¢ÂÂ default to notify_admin."""
     if not action_str:
         return "notify_admin"
     action = action_str.strip().lower()
@@ -66,7 +70,7 @@ class CommsState(TypedDict, total=False):
 
 def _telegram_send(text, chat_id=None, reply_to_message_id=None, parse_mode="Markdown"):
     """Send to Telegram with belt-and-suspenders fallback: try Markdown first; on HTTP 400 parse error retry as plain text.
-    Doctrine §97 cousin: never trust dynamic content in Markdown formatting."""
+    Doctrine Â§97 cousin: never trust dynamic content in Markdown formatting."""
     if not TELEGRAM_BOT_TOKEN:
         return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not set"}
     target = chat_id or ANTONIO_CHAT_ID
@@ -164,14 +168,47 @@ def dispatch_to_specialist(state):
         # Add a category prefix if provided
         category = payload.get("category")
         severity = payload.get("severity", "info")
-        prefix_map = {"info": "â¹ï¸", "warning": "â ï¸", "error": "ð¨", "success": "â"}
-        prefix = prefix_map.get(severity, "â¹ï¸")
+        prefix_map = {"info": "Ã¢ÂÂ¹Ã¯Â¸Â", "warning": "Ã¢ÂÂ Ã¯Â¸Â", "error": "Ã°ÂÂÂ¨", "success": "Ã¢ÂÂ"}
+        prefix = prefix_map.get(severity, "Ã¢ÂÂ¹Ã¯Â¸Â")
         if category:
             full_text = f"{prefix} *{category}*\n\n{message}"
         else:
             full_text = f"{prefix} {message}"
         result = _telegram_send(full_text, chat_id=chat_id, reply_to_message_id=reply_to)
         return {**state, "specialist_result": result}
+    
+    if via == "direct_resend":
+        # Doctrine S108 - internal email for ops digests, daily briefs, education sweeps
+        recipient = payload.get("recipient") or INTERNAL_EMAIL_TO
+        subject_raw = payload.get("subject") or "[MMA OS] Internal alert"
+        body = payload.get("body") or payload.get("message") or payload.get("text") or "(no body)"
+        category = payload.get("category", "")
+        severity = payload.get("severity", "info")
+        sev_map = {"info": "[OK]", "warning": "[WARN]", "error": "[CRITICAL]", "success": "[WIN]"}
+        sev_prefix = sev_map.get(severity, "[OK]")
+        if category:
+            subject = sev_prefix + " " + category + " - " + subject_raw
+        else:
+            subject = sev_prefix + " " + subject_raw
+        # Stub mode if RESEND_API_KEY not configured
+        if not RESEND_API_KEY:
+            stub_msg = "[STUB] RESEND_API_KEY not set. Would have emailed " + recipient + ": " + subject
+            return {**state, "specialist_result": {"ok": True, "stub": True, "recipient": recipient, "subject": subject, "body_preview": body[:200], "reason": "RESEND_API_KEY env var not configured"}}
+        # Send via Resend
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                rr = client.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": "Bearer " + RESEND_API_KEY, "Content-Type": "application/json"},
+                    json={"from": RESEND_FROM_EMAIL, "to": [recipient], "subject": subject, "text": body}
+                )
+                if rr.status_code < 300:
+                    rd = rr.json()
+                    return {**state, "specialist_result": {"ok": True, "stub": False, "recipient": recipient, "subject": subject, "resend_id": rd.get("id"), "status": rr.status_code}}
+                else:
+                    return {**state, "specialist_result": {"ok": False, "error": "resend_http_" + str(rr.status_code), "body": rr.text[:300]}}
+        except Exception as exc:
+            return {**state, "specialist_result": {"ok": False, "error": str(exc)}}
     
     if via == "bridge_verb":
         verb = spec["verb"]
