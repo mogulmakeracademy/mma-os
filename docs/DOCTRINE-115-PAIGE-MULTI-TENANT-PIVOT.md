@@ -50,7 +50,7 @@ The 9 BTF lifecycle/stall templates pushed earlier on 2026-06-29 (btf_welcome, b
 - Consumer (linked_user_id) sees only their own rows regardless of tenant
 
 ### BTF pricing change implications
-The customer-facing BTF tiers in the new catalog DIFFER slightly from the BTF Service Agreement v1 skeleton I drafted earlier:
+The customer-facing BTF tiers in the new catalog DIFFER slightly from the BTF Service Agreement v1 skeleton drafted earlier:
 
 OLD (drafted in agreement v1):
 - Pay-In-Full: $4,997
@@ -62,7 +62,7 @@ NEW (Lovable offer catalog):
 - btf_split: $1,997 down + $1,000 x 3 (CHANGED total still $4,997 but different schedule)
 - btf_getstarted: $997 + $497/mo (CHANGED initial down + open-ended monthly)
 
-**BTF Service Agreement v1 needs an amendment to match new pricing before next client signs.** Jacqueline (Get-Started, $1,000 paid 2026-06-24, $497/mo x 8 schedule) is GRANDFATHERED at her existing pricing - confirm with Antonio.
+**BTF Service Agreement v1 needs an amendment to match new pricing before next client signs.** Any clients currently in-flight under the OLD pricing schedule remain grandfathered at their existing terms — handled externally by the founder per Doctrine S116 until the system is fully functional.
 
 ### LaunchPad disposition
 LaunchPad slug is being dropped from the offer picker but the launchpad_orchestrator agent (Tier 1 Stream #3) is still deployed in LangGraph. Confirm with Antonio whether:
@@ -76,6 +76,7 @@ LaunchPad slug is being dropped from the offer picker but the launchpad_orchestr
 - **Doctrine S104** (Paige as sales machine for capital professionals) — This pivot REALIZES that vision; the tenant model is how loan officers, brokers, CDFIs get their own workspaces
 - **Doctrine S109** (Antonio = MMA OS admin only, Lovable = Paige admin only) — UNCHANGED; tenant migration handled entirely by Lovable
 - **Doctrine S114** (Template content/delivery separation) — UNCHANGED; templates still stored in Paige's email_templates table, just now per-tenant. MMA OS pushes to Antonio's tenant by default.
+- **Doctrine S116** (Build the system, not the use case) — Customer-specific handling stays external to the system. The system bends for no individual customer.
 
 ## Out of scope (Phase 2/3 — NOT being built now)
 - Tenant-level custom domains (needs Vercel/Cloudflare wildcard config)
@@ -95,12 +96,10 @@ LaunchPad slug is being dropped from the offer picker but the launchpad_orchestr
 1. Confirm with Lovable that paige-mcp-proxy auto-injects tenant_id from the bearer-key context (no MMA OS agent code changes needed)
 2. Verify Antonio's tenant_id post-migration; capture in internal_secrets table as ANTONIO_TENANT_ID
 3. Update BTF Service Agreement v1 pricing references to match new btf_pif/btf_split/btf_getstarted schedule (deferred to legal_drafting_agent or manual update)
-4. Confirm Jacqueline grandfathered at $1,000 + $497/mo x 8
-5. Resolve LaunchPad disposition (retire, grandfather, or re-architect)
-6. Update task #401 (Lovable Stripe billing schedule) to reflect new btf_getstarted pricing for future clients
+4. Resolve LaunchPad disposition (retire, grandfather, or re-architect)
 
 ## Why this moment matters
 
 Multi-tenancy is the line between "founder's tool" and "company that sells software." Before today, Paige was Antonio's internal CRM with a brand. After today, it's a SaaS product with paying tenants and a real ARR ladder ($97 -> $297 -> custom). Every architectural decision from this day forward gets evaluated through "does this work for 1 tenant or 1,000 tenants?"
 
-The exit story is now coherent: capital-professional ICP (Doctrine S104) + multi-tenant SaaS (this doctrine) + cross-system observability (Doctrine S77) + exit-ready posture (Doctrine S72).
+The exit story is now coherent: capital-professional ICP (Doctrine S104) + multi-tenant SaaS (this doctrine) + cross-system observability (Doctrine S77) + exit-ready posture (Doctrine S72) + generalized system (Doctrine S116).
