@@ -13,17 +13,17 @@ The transition happens at Onboarding Flow STAGE 3 completion (per Doctrine S110)
 
 | Stage | Type | Description |
 |---|---|---|
-| `new_lead` | Lead | Just entered the funnel (form submit, ad click, referral, manual add) |
-| `qualified` | Lead | Has been scored as fit (e.g. sales_dept.handle_new_lead → BTF_QUALIFIED, LAUNCHPAD, EXPLORER) |
-| `nurturing` | Lead | In an active nurture sequence (Skool 45-day, etc.) |
-| `hot_lead` | Lead | High-intent signals (recent engagement, qualified-bucket call requested) |
-| `negotiating` | Lead | Sales conversation active, terms being discussed |
-| `won` | Lead (paid, pre-signing) | Paid initial deposit / pay-in-full, but NOT yet signed agreement |
-| `client_active` | Client | Signed agreement + payment authorized — workspace access granted |
-| `client_paused` | Client | Payment lapse or temporary pause |
-| `client_churned` | Client | Terminated (refund issued, cancellation, or non-payment) |
-| `client_funded` | Client | Completed BTF program + funded (terminal success state) |
-| `client_alumni` | Client | Completed program (funded or not) + transitioned to alumni status |
+| new_lead | Lead | Just entered the funnel (form submit, ad click, referral, manual add) |
+| qualified | Lead | Has been scored as fit (e.g. sales_dept.handle_new_lead → BTF_QUALIFIED, LAUNCHPAD, EXPLORER) |
+| nurturing | Lead | In an active nurture sequence (Skool 45-day, etc.) |
+| hot_lead | Lead | High-intent signals (recent engagement, qualified-bucket call requested) |
+| negotiating | Lead | Sales conversation active, terms being discussed |
+| won | Lead (paid, pre-signing) | Paid initial deposit / pay-in-full, but NOT yet signed agreement |
+| client_active | Client | Signed agreement + payment authorized — workspace access granted |
+| client_paused | Client | Payment lapse or temporary pause |
+| client_churned | Client | Terminated (refund issued, cancellation, or non-payment) |
+| client_funded | Client | Completed BTF program + funded (terminal success state) |
+| client_alumni | Client | Completed program (funded or not) + transitioned to alumni status |
 
 ## Why this distinction matters
 
@@ -46,8 +46,8 @@ The transition happens at Onboarding Flow STAGE 3 completion (per Doctrine S110)
 ## Paige data model implication
 
 Lovable needs to ensure:
-  - `clients` table has a `lifecycle_stage` field that supports all 11 values above
-  - UI permission gates check `lifecycle_stage` to grant/deny workspace access
+  - clients table has a lifecycle_stage field that supports all 11 values above
+  - UI permission gates check lifecycle_stage to grant/deny workspace access
   - Search filters distinguish Lead vs Client views
   - Pipeline visualization separates Lead pipeline from Client pipeline
   - "Won" state is the transitional bucket — paid but not yet workspace-active
@@ -62,13 +62,15 @@ When Paige fires events for state transitions:
 
 ## Special case: Paid but not yet onboarded
 
-Jacqueline as of 2026-06-29 is in this state: she has PAID Antonio outside the system but has NOT signed the agreement or completed onboarding. Her lifecycle_stage should be `won` until she enters the Onboarding Flow and completes STAGES 2-3 of Doctrine S110. Then she becomes `client_active`.
+When a customer pays the founder outside the system but has NOT signed the agreement or completed onboarding, their lifecycle_stage should be `won` until they enter the Onboarding Flow and complete STAGES 2-3 of Doctrine S110. Then they become `client_active`.
 
 This state is critical — it represents revenue collected that has not yet been formally contracted. Legal Department must track these "open won" deals and ensure agreements get signed before substantial service delivery begins.
 
+When the system is not yet fully functional, the founder may handle these cases externally per Doctrine S116. Once the Onboarding Flow is live and verified, all "won" customers route through the system identically — no per-person handling.
+
 ## What this PROHIBITS
 
-  - No BTF education emails to anyone not in `client_active` state
-  - No coach work assigned to anyone not in `client_active` state
-  - No workspace access to anyone not in `client_active` state
-  - No marketing-nurture emails to anyone already in `client_active` state (separation of audiences)
+  - No BTF education emails to anyone not in client_active state
+  - No coach work assigned to anyone not in client_active state
+  - No workspace access to anyone not in client_active state
+  - No marketing-nurture emails to anyone already in client_active state (separation of audiences)
